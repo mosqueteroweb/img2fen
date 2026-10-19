@@ -38,9 +38,13 @@ class MainActivity : ComponentActivity() {
     private val historyRepository by lazy { FenHistoryRepository(applicationContext) }
     private val digitalClassifier by lazy { DigitalChessClassifier(applicationContext) }
 
+    private var sharedBitmapState = mutableStateOf<Bitmap?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        handleIntent(intent)
 
         setContent {
             Img2FENTheme {
@@ -48,10 +52,36 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    val sharedBitmap by sharedBitmapState
                     AppContent(
                         historyRepository = historyRepository,
-                        digitalClassifier = digitalClassifier
+                        digitalClassifier = digitalClassifier,
+                        initialSharedBitmap = sharedBitmap,
+                        onClearSharedBitmap = { sharedBitmapState.value = null }
                     )
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: android.content.Intent?) {
+        if (intent?.action == android.content.Intent.ACTION_SEND && intent.type?.startsWith("image/") == true) {
+            val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)
+            }
+            if (uri != null) {
+                val bitmap = com.mosqueteroweb.img2fen.util.ImageUtils.loadBitmapFromUri(applicationContext, uri)
+                if (bitmap != null) {
+                    sharedBitmapState.value = bitmap
                 }
             }
         }
@@ -66,12 +96,22 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppContent(
     historyRepository: FenHistoryRepository,
-    digitalClassifier: DigitalChessClassifier
+    digitalClassifier: DigitalChessClassifier,
+    initialSharedBitmap: Bitmap? = null,
+    onClearSharedBitmap: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var currentScreen by remember { mutableStateOf<AppScreen>(AppScreen.Home) }
     var isProcessing by remember { mutableStateOf(false) }
+
+    // When an image is shared to the app, navigate immediately to CropScreen
+    androidx.compose.runtime.LaunchedEffect(initialSharedBitmap) {
+        if (initialSharedBitmap != null) {
+            currentScreen = AppScreen.Crop(initialSharedBitmap)
+            onClearSharedBitmap()
+        }
+    }
 
     when (val screen = currentScreen) {
         is AppScreen.Home -> {

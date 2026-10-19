@@ -1,6 +1,9 @@
 package com.mosqueteroweb.img2fen.ui.screens
 
 import android.graphics.Bitmap
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -83,6 +86,8 @@ fun CropScreen(
     var viewportPx by remember { mutableFloatStateOf(0f) }
     var hasAutoFitted by remember { mutableStateOf(false) }
     var isDetecting by remember { mutableStateOf(false) }
+    var isRotating by remember { mutableStateOf(false) }
+    var rotationDismissJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     fun autoDetectAndFit() {
@@ -187,6 +192,16 @@ fun CropScreen(
                             rotation = (rotation + rotationChange) % 360f
                             offsetX += pan.x
                             offsetY += pan.y
+
+                            // Ephemeral rotation indicator: activate when actively rotating with two fingers
+                            if (kotlin.math.abs(rotationChange) > 0.15f) {
+                                isRotating = true
+                                rotationDismissJob?.cancel()
+                                rotationDismissJob = scope.launch {
+                                    kotlinx.coroutines.delay(450)
+                                    isRotating = false
+                                }
+                            }
                         }
                     },
                 contentAlignment = Alignment.Center
@@ -259,15 +274,20 @@ fun CropScreen(
                     }
                 }
 
-                // Rotation angle badge (visible when rotated)
+                // Ephemeral rotation angle badge (visible ONLY while actively rotating with two fingers)
                 val roundedAngle = kotlin.math.round(rotation % 360f).toInt().let {
                     if (it > 180) it - 360 else if (it < -180) it + 360 else it
                 }
-                if (roundedAngle != 0) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isRotating && roundedAngle != 0,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                ) {
                     Box(
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .background(Color.Black.copy(alpha = 0.75f))
                             .padding(horizontal = 8.dp, vertical = 4.dp)

@@ -11,8 +11,8 @@ android {
         applicationId = "com.mosqueteroweb.img2fen"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.0"
+        versionCode = 8
+        versionName = "1.1.0"
         ndk {
 
             abiFilters += listOf("arm64-v8a")
