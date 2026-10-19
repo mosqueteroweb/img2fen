@@ -128,7 +128,7 @@ fun HomeScreen(
                         Text("♟️ Img2FEN", fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "v0.1.0",
+                            "v0.2.0",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -155,12 +155,21 @@ fun HomeScreen(
                         modifier = Modifier.padding(18.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(id = com.mosqueteroweb.img2fen.R.drawable.ic_app_logo),
+                            contentDescription = "Logo Img2FEN",
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "Convierte diagramas de ajedrez a FEN",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Fotografía una página de libro, revista o pantalla para extraer la posición al instante.",
