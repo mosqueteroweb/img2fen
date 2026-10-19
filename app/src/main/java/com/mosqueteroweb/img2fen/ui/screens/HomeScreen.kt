@@ -141,18 +141,9 @@ fun HomeScreen(
                         Text("Img2FEN", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "v0.4.1",
+                            "v0.4.2",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        // Creator logo next to the version
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_creator_logo),
-                            contentDescription = "Mosqueteroweb",
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
                         )
                     }
                 },
@@ -358,7 +349,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Img2FEN v0.4.1 • por Mosqueteroweb",
+                        text = "Img2FEN v0.4.2 • por Mosqueteroweb",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )

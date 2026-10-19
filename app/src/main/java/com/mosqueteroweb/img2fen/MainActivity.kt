@@ -20,12 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.mosqueteroweb.img2fen.data.FenHistoryRepository
 import com.mosqueteroweb.img2fen.engine.DigitalChessClassifier
-import com.mosqueteroweb.img2fen.engine.GeminiVisionService
 import com.mosqueteroweb.img2fen.model.BoardPosition
 import com.mosqueteroweb.img2fen.theme.Img2FENTheme
 import com.mosqueteroweb.img2fen.ui.screens.CropScreen
 import com.mosqueteroweb.img2fen.ui.screens.HomeScreen
-import com.mosqueteroweb.img2fen.ui.screens.RecognitionEngine
 import com.mosqueteroweb.img2fen.ui.screens.ResultScreen
 import kotlinx.coroutines.launch
 
@@ -39,7 +37,6 @@ class MainActivity : ComponentActivity() {
 
     private val historyRepository by lazy { FenHistoryRepository(applicationContext) }
     private val digitalClassifier by lazy { DigitalChessClassifier(applicationContext) }
-    private val geminiService by lazy { GeminiVisionService(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,8 +50,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     AppContent(
                         historyRepository = historyRepository,
-                        digitalClassifier = digitalClassifier,
-                        geminiService = geminiService
+                        digitalClassifier = digitalClassifier
                     )
                 }
             }
@@ -70,15 +66,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppContent(
     historyRepository: FenHistoryRepository,
-    digitalClassifier: DigitalChessClassifier,
-    geminiService: GeminiVisionService
+    digitalClassifier: DigitalChessClassifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var currentScreen by remember { mutableStateOf<AppScreen>(AppScreen.Home) }
     var isProcessing by remember { mutableStateOf(false) }
-
-    var geminiApiKey by remember { mutableStateOf(geminiService.getApiKey()) }
 
     when (val screen = currentScreen) {
         is AppScreen.Home -> {
@@ -100,33 +93,12 @@ fun AppContent(
             CropScreen(
                 imageBitmap = screen.bitmap,
                 isProcessing = isProcessing,
-                geminiApiKey = geminiApiKey,
-                onSaveGeminiApiKey = { newKey ->
-                    geminiService.setApiKey(newKey)
-                    geminiApiKey = newKey
-                    Toast.makeText(context, "Clave API de Gemini guardada", Toast.LENGTH_SHORT).show()
-                },
-                onConfirmCrop = { croppedBitmap, engine ->
+                onConfirmCrop = { croppedBitmap ->
                     scope.launch {
                         isProcessing = true
                         try {
-                            if (engine == RecognitionEngine.GEMINI_CLOUD && geminiService.hasApiKey()) {
-                                try {
-                                    val cloudBoard = geminiService.recognizeFenFromImage(croppedBitmap)
-                                    currentScreen = AppScreen.Result(cloudBoard)
-                                } catch (e: Exception) {
-                                    Toast.makeText(
-                                        context,
-                                        "Error con Gemini (${e.localizedMessage ?: "error de red"}). Analizando con modelo local...",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                    val localBoard = digitalClassifier.classifyBoard(croppedBitmap)
-                                    currentScreen = AppScreen.Result(localBoard)
-                                }
-                            } else {
-                                val recognizedBoard = digitalClassifier.classifyBoard(croppedBitmap)
-                                currentScreen = AppScreen.Result(recognizedBoard)
-                            }
+                            val recognizedBoard = digitalClassifier.classifyBoard(croppedBitmap)
+                            currentScreen = AppScreen.Result(recognizedBoard)
                         } catch (e: Exception) {
                             Toast.makeText(context, "Error procesando imagen: ${e.message}", Toast.LENGTH_SHORT).show()
                             currentScreen = AppScreen.Result(BoardPosition.initial())

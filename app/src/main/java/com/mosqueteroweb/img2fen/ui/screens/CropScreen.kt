@@ -26,24 +26,17 @@ import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,19 +66,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class RecognitionEngine {
-    GEMINI_CLOUD,
-    LOCAL_OFFLINE
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CropScreen(
     imageBitmap: Bitmap,
     isProcessing: Boolean,
-    geminiApiKey: String,
-    onSaveGeminiApiKey: (String) -> Unit,
-    onConfirmCrop: (croppedBitmap: Bitmap, engine: RecognitionEngine) -> Unit,
+    onConfirmCrop: (croppedBitmap: Bitmap) -> Unit,
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -97,10 +83,6 @@ fun CropScreen(
     var viewportPx by remember { mutableFloatStateOf(0f) }
     var hasAutoFitted by remember { mutableStateOf(false) }
     var isDetecting by remember { mutableStateOf(false) }
-
-    // Default to the high-accuracy offline 2D model
-    var selectedEngine by remember { mutableStateOf(RecognitionEngine.LOCAL_OFFLINE) }
-    var showApiKeyDialog by remember { mutableStateOf(false) }
 
     fun autoDetectAndFit() {
         if (viewportPx <= 0f) return
@@ -164,7 +146,7 @@ fun CropScreen(
                         },
                         enabled = !isProcessing
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "Rotar")
+                        Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "Rotar 90°")
                     }
                 }
             )
@@ -179,7 +161,7 @@ fun CropScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "👉 Ajusta el tablero para que las 64 casillas coincidan con las líneas amarillas.",
+                text = "👉 Mueve y pellizca con dos dedos para hacer zoom y rotar el tablero.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -197,8 +179,10 @@ fun CropScreen(
                         viewportPx = size.width.toFloat()
                     }
                     .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
+                        // Two-finger gesture allows both pinch-to-zoom and two-finger rotation to straighten tilted photos
+                        detectTransformGestures { _, pan, zoom, rotationChange ->
                             scale = (scale * zoom).coerceIn(0.5f, 6f)
+                            rotation = (rotation + rotationChange) % 360f
                             offsetX += pan.x
                             offsetY += pan.y
                         }
@@ -266,10 +250,8 @@ fun CropScreen(
                             Text(
                                 text = if (isDetecting)
                                     "Buscando tablero automáticamente..."
-                                else if (selectedEngine == RecognitionEngine.GEMINI_CLOUD)
-                                    "Analizando con Gemini Vision AI..."
                                 else
-                                    "Analizando casillas offline...",
+                                    "Reconociendo piezas offline...",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
                             )
@@ -278,9 +260,9 @@ fun CropScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Zoom controls: "Zoom:" and 3 icon buttons without text labels (User requirement)
+            // Zoom and auto controls: "Zoom:" and 4 clean icon buttons without text labels
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -294,21 +276,21 @@ fun CropScreen(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 OutlinedIconButton(
                     onClick = { scale = (scale + 0.15f).coerceAtMost(6f) },
                     enabled = !isProcessing && !isDetecting
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Aumentar zoom")
                 }
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 OutlinedIconButton(
                     onClick = { scale = (scale - 0.15f).coerceAtLeast(0.5f) },
                     enabled = !isProcessing && !isDetecting
                 ) {
                     Icon(Icons.Default.Remove, contentDescription = "Reducir zoom")
                 }
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 OutlinedIconButton(
                     onClick = {
                         scale = 1f
@@ -318,84 +300,23 @@ fun CropScreen(
                     },
                     enabled = !isProcessing && !isDetecting
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Restablecer zoom")
+                    Icon(Icons.Default.Refresh, contentDescription = "Restablecer posición y zoom")
                 }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                FilledTonalButton(
+                Spacer(modifier = Modifier.width(8.dp))
+                // Magic wand icon only (no text) for auto detection
+                OutlinedIconButton(
                     onClick = { autoDetectAndFit() },
                     enabled = !isProcessing && !isDetecting
                 ) {
-                    Icon(Icons.Default.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Auto", fontWeight = FontWeight.SemiBold)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Engine Selection Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "Motor de Reconocimiento",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                    Icon(
+                        Icons.Default.AutoFixHigh,
+                        contentDescription = "Auto-encajar tablero",
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilterChip(
-                            selected = selectedEngine == RecognitionEngine.LOCAL_OFFLINE,
-                            onClick = { selectedEngine = RecognitionEngine.LOCAL_OFFLINE },
-                            label = { Text("📱 Modelo 2D Offline (Recomendado)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        FilterChip(
-                            selected = selectedEngine == RecognitionEngine.GEMINI_CLOUD,
-                            onClick = {
-                                selectedEngine = RecognitionEngine.GEMINI_CLOUD
-                                if (geminiApiKey.isBlank()) {
-                                    showApiKeyDialog = true
-                                }
-                            },
-                            label = { Text("✨ Gemini Nube", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                            modifier = Modifier.weight(0.6f)
-                        )
-                    }
-
-                    if (selectedEngine == RecognitionEngine.GEMINI_CLOUD) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (geminiApiKey.isNotBlank()) "Clave API configurada ✓" else "⚠️ Requiere clave API gratuita",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (geminiApiKey.isNotBlank()) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-                            )
-                            TextButton(onClick = { showApiKeyDialog = true }) {
-                                Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Ajustar Clave", fontSize = 12.sp)
-                            }
-                        }
-                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Submit Button
             Button(
@@ -408,11 +329,12 @@ fun CropScreen(
                         offsetY = offsetY,
                         rotation = rotation
                     )
-                    onConfirmCrop(cropped, selectedEngine)
+                    onConfirmCrop(cropped)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
+                shape = RoundedCornerShape(12.dp),
                 enabled = !isProcessing && !isDetecting
             ) {
                 Icon(Icons.Default.Check, contentDescription = null)
@@ -420,44 +342,5 @@ fun CropScreen(
                 Text("Analizar Diagrama", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
-    }
-
-    // Gemini API Key Input Dialog
-    if (showApiKeyDialog) {
-        var keyInput by remember { mutableStateOf(geminiApiKey) }
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showApiKeyDialog = false },
-            title = { Text("Configurar Gemini API Key") },
-            text = {
-                Column {
-                    Text(
-                        text = "Gemini Vision AI analiza el diagrama con modelos en la nube. Es gratuita en Google AI Studio si deseas usarla.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = keyInput,
-                        onValueChange = { keyInput = it },
-                        label = { Text("Clave API de Gemini") },
-                        placeholder = { Text("AIzaSy...") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    onSaveGeminiApiKey(keyInput.trim())
-                    showApiKeyDialog = false
-                }) {
-                    Text("Guardar")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showApiKeyDialog = false }) {
-                    Text("Cancelar")
-                }
-            }
-        )
     }
 }
