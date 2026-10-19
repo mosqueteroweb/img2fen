@@ -12,7 +12,9 @@ import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,15 +34,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
@@ -60,12 +62,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.mosqueteroweb.img2fen.R
 import com.mosqueteroweb.img2fen.data.FenHistoryRepository
 import com.mosqueteroweb.img2fen.model.BoardPosition
 import com.mosqueteroweb.img2fen.model.FenHistoryItem
@@ -125,14 +129,49 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("♟️ Img2FEN", fontWeight = FontWeight.Bold)
+                        // Official App Logo (Digital Knight) instead of unicode pawn
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_app_logo),
+                            contentDescription = "Logo Img2FEN",
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Img2FEN", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "v0.3.0",
+                            "v0.4.1",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
+                        Spacer(modifier = Modifier.width(6.dp))
+                        // Creator logo next to the version
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_creator_logo),
+                            contentDescription = "Mosqueteroweb",
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                        )
+                    }
+                },
+                actions = {
+                    // Creator avatar on the right side of the top bar
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 12.dp)
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_creator_logo),
+                            contentDescription = "Mosqueteroweb - Creador",
+                            modifier = Modifier.size(32.dp)
+                        )
                     }
                 }
             )
@@ -156,8 +195,8 @@ fun HomeScreen(
                         modifier = Modifier.padding(18.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        androidx.compose.foundation.Image(
-                            painter = androidx.compose.ui.res.painterResource(id = com.mosqueteroweb.img2fen.R.drawable.ic_app_logo),
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_app_logo),
                             contentDescription = "Logo Img2FEN",
                             modifier = Modifier
                                 .size(72.dp)
@@ -180,7 +219,7 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.height(18.dp))
 
-                        // Big Camera Button
+                        // Big Camera Button (properly sized and formatted text)
                         Button(
                             onClick = {
                                 try {
@@ -191,12 +230,18 @@ fun HomeScreen(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp),
+                                .defaultMinSize(minHeight = 50.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.CameraAlt, contentDescription = null)
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("Hacer Foto de Diagrama", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Hacer Foto",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -208,12 +253,18 @@ fun HomeScreen(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp),
+                                .defaultMinSize(minHeight = 48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Elegir de la Galería", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = "Elegir de la Galería",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -248,12 +299,13 @@ fun HomeScreen(
                 }
             }
 
-            // Empty state or History List
+            // History List
             if (historyItems.isEmpty()) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                     ) {
                         Column(
                             modifier = Modifier
@@ -261,17 +313,16 @@ fun HomeScreen(
                                 .padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("♟️", fontSize = 36.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "No hay diagramas recientes",
+                                text = "No hay posiciones recientes",
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                "Los últimos 10 FENs escaneados aparecerán aquí para copiarlos en un clic.",
-                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Toma una foto o selecciona una imagen para comenzar.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         }
                     }
@@ -287,12 +338,37 @@ fun HomeScreen(
                         onCopy = {
                             copyToClipboard(context, item.fen)
                         },
-                        onOpenLichess = {
-                            openInLichess(context, item.fen)
+                        onOpenChessCom = {
+                            openInChessCom(context, item.fen)
                         },
                         onDelete = {
                             historyRepository.deleteItem(item.id)
                         }
+                    )
+                }
+            }
+
+            // Footer branding
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Img2FEN v0.4.1 • por Mosqueteroweb",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_creator_logo),
+                        contentDescription = "Mosqueteroweb",
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
                     )
                 }
             }
@@ -305,7 +381,7 @@ private fun HistoryItemCard(
     item: FenHistoryItem,
     onClick: () -> Unit,
     onCopy: () -> Unit,
-    onOpenLichess: () -> Unit,
+    onOpenChessCom: () -> Unit,
     onDelete: () -> Unit
 ) {
     val formattedDate = remember(item.timestamp) {
@@ -370,8 +446,8 @@ private fun HistoryItemCard(
                     Icon(Icons.Default.ContentCopy, contentDescription = "Copiar FEN", modifier = Modifier.size(18.dp))
                 }
                 Spacer(modifier = Modifier.width(4.dp))
-                IconButton(onClick = onOpenLichess, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.OpenInNew, contentDescription = "Abrir en Lichess", modifier = Modifier.size(18.dp))
+                IconButton(onClick = onOpenChessCom, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Abrir en Chess.com", modifier = Modifier.size(18.dp))
                 }
                 Spacer(modifier = Modifier.width(4.dp))
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
@@ -390,7 +466,6 @@ private fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
                 decoder.isMutableRequired = true
             }
-
         } else {
             @Suppress("DEPRECATION")
             MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
@@ -407,13 +482,13 @@ private fun copyToClipboard(context: Context, fen: String) {
     Toast.makeText(context, "FEN copiado al portapapeles", Toast.LENGTH_SHORT).show()
 }
 
-private fun openInLichess(context: Context, fen: String) {
+private fun openInChessCom(context: Context, fen: String) {
     try {
         val encodedFen = URLEncoder.encode(fen, StandardCharsets.UTF_8.toString())
-        val url = "https://lichess.org/analysis/$encodedFen"
+        val url = "https://www.chess.com/analysis?fen=$encodedFen"
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         context.startActivity(intent)
     } catch (e: Exception) {
-        Toast.makeText(context, "No se pudo abrir Lichess", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "No se pudo abrir Chess.com", Toast.LENGTH_SHORT).show()
     }
 }

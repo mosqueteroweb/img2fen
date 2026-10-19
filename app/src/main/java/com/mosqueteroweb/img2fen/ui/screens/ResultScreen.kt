@@ -23,10 +23,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
@@ -99,7 +99,7 @@ fun ResultScreen(
                 title = { Text("Posición FEN") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Atrás")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
                     }
                 },
                 actions = {
@@ -263,28 +263,17 @@ fun ResultScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // External App Export Buttons (Lichess & Chess.com)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // External App Export Button (Chess.com)
+            OutlinedButton(
+                onClick = { openInChessCom(context, currentFen) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                OutlinedButton(
-                    onClick = { openInLichess(context, currentFen) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Lichess", fontWeight = FontWeight.SemiBold)
-                }
-
-                OutlinedButton(
-                    onClick = { openInChessCom(context, currentFen) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Chess.com", fontWeight = FontWeight.SemiBold)
-                }
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Abrir en Chess.com", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -333,17 +322,6 @@ private fun shareFen(context: Context, fen: String) {
     }
     val shareIntent = Intent.createChooser(sendIntent, "Compartir posición FEN")
     context.startActivity(shareIntent)
-}
-
-private fun openInLichess(context: Context, fen: String) {
-    try {
-        val encodedFen = URLEncoder.encode(fen, StandardCharsets.UTF_8.toString())
-        val url = "https://lichess.org/analysis/$encodedFen"
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        Toast.makeText(context, "No se pudo abrir Lichess", Toast.LENGTH_SHORT).show()
-    }
 }
 
 private fun openInChessCom(context: Context, fen: String) {
