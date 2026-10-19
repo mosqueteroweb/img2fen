@@ -83,9 +83,11 @@ fun CropScreen(
     var viewportPx by remember { mutableFloatStateOf(0f) }
     var hasAutoFitted by remember { mutableStateOf(false) }
     var isDetecting by remember { mutableStateOf(false) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     fun autoDetectAndFit() {
         if (viewportPx <= 0f) return
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         isDetecting = true
         scope.launch(Dispatchers.Default) {
             val corners = ChessboardDetector.findChessboard(imageBitmap)
@@ -205,22 +207,43 @@ fun CropScreen(
                         }
                 )
 
-                // 8x8 Grid overlay
+                // 8x8 Grid overlay with dual-stroke high-contrast for readability on all board colors
                 Canvas(modifier = Modifier.fillMaxSize()) {
+                    val shadowWidth = 3.dp.toPx()
                     val strokeWidth = 1.5.dp.toPx()
-                    val gridColor = Color.Yellow.copy(alpha = 0.85f)
+                    val shadowColor = Color.Black.copy(alpha = 0.65f)
+                    val gridColor = Color.Yellow
 
-                    // Outer border
+                    // Outer border (shadow + bright line)
                     drawRect(
-                        color = Color.Yellow,
+                        color = shadowColor,
                         size = size,
-                        style = Stroke(width = 3.dp.toPx())
+                        style = Stroke(width = 4.5.dp.toPx())
+                    )
+                    drawRect(
+                        color = gridColor,
+                        size = size,
+                        style = Stroke(width = 2.5.dp.toPx())
                     )
 
-                    // Internal 8x8 lines
+                    // Internal 8x8 lines with contrasting drop shadow
                     val stepX = size.width / 8f
                     val stepY = size.height / 8f
                     for (i in 1..7) {
+                        // Dark shadow line underneath
+                        drawLine(
+                            color = shadowColor,
+                            start = Offset(i * stepX, 0f),
+                            end = Offset(i * stepX, size.height),
+                            strokeWidth = shadowWidth
+                        )
+                        drawLine(
+                            color = shadowColor,
+                            start = Offset(0f, i * stepY),
+                            end = Offset(size.width, i * stepY),
+                            strokeWidth = shadowWidth
+                        )
+                        // Bright yellow line on top
                         drawLine(
                             color = gridColor,
                             start = Offset(i * stepX, 0f),
@@ -232,6 +255,28 @@ fun CropScreen(
                             start = Offset(0f, i * stepY),
                             end = Offset(size.width, i * stepY),
                             strokeWidth = strokeWidth
+                        )
+                    }
+                }
+
+                // Rotation angle badge (visible when rotated)
+                val roundedAngle = kotlin.math.round(rotation % 360f).toInt().let {
+                    if (it > 180) it - 360 else if (it < -180) it + 360 else it
+                }
+                if (roundedAngle != 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.Black.copy(alpha = 0.75f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "↺ $roundedAngle°",
+                            color = Color.Yellow,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }

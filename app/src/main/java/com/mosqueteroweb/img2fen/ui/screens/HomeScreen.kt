@@ -90,9 +90,17 @@ fun HomeScreen(
     val context = LocalContext.current
     val historyItems by historyRepository.historyFlow.collectAsState()
 
-    // Temporary URI for camera capture
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    // Temporary URI for camera capture (scoped to camera/ subfolder and cleaned up)
     val tempCameraUri = remember {
-        val tempFile = File(context.cacheDir, "temp_capture_${System.currentTimeMillis()}.jpg")
+        val cameraDir = File(context.cacheDir, "camera").apply { mkdirs() }
+        cameraDir.listFiles()?.forEach { file ->
+            if (file.name.startsWith("temp_capture_") && file.extension == "jpg") {
+                file.delete()
+            }
+        }
+        val tempFile = File(cameraDir, "temp_capture_${System.currentTimeMillis()}.jpg")
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
     }
 
@@ -141,7 +149,7 @@ fun HomeScreen(
                         Text("Img2FEN", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "v0.4.2",
+                            "v1.0.0",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -327,6 +335,7 @@ fun HomeScreen(
                             onSelectRecentFen(board)
                         },
                         onCopy = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                             copyToClipboard(context, item.fen)
                         },
                         onOpenChessCom = {
@@ -349,7 +358,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Img2FEN v0.4.2 • por Mosqueteroweb",
+                        text = "Img2FEN v1.0.0 • por Mosqueteroweb",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
@@ -433,16 +442,16 @@ private fun HistoryItemCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Copiar FEN", modifier = Modifier.size(18.dp))
+                IconButton(onClick = onCopy, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copiar FEN", modifier = Modifier.size(20.dp))
                 }
                 Spacer(modifier = Modifier.width(4.dp))
-                IconButton(onClick = onOpenChessCom, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Abrir en Chess.com", modifier = Modifier.size(18.dp))
+                IconButton(onClick = onOpenChessCom, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Abrir en Chess.com", modifier = Modifier.size(20.dp))
                 }
                 Spacer(modifier = Modifier.width(4.dp))
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                IconButton(onClick = onDelete, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
                 }
             }
         }

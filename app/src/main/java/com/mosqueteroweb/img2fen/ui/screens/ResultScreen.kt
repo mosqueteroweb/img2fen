@@ -79,6 +79,7 @@ fun ResultScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -247,6 +248,7 @@ fun ResultScreen(
             // Primary Copy Button
             Button(
                 onClick = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     copyToClipboard(context, currentFen)
                     scope.launch {
                         snackbarHostState.showSnackbar("¡FEN copiado al portapapeles!")
