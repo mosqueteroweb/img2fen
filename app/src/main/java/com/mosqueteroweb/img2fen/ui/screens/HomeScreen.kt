@@ -128,10 +128,11 @@ fun HomeScreen(
                         Text("♟️ Img2FEN", fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "v0.2.0",
+                            "v0.3.0",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
                     }
                 }
             )

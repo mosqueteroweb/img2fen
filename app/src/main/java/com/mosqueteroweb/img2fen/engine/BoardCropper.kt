@@ -1,34 +1,51 @@
 package com.mosqueteroweb.img2fen.engine
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Matrix
-import android.graphics.RectF
+import android.graphics.Paint
 
 object BoardCropper {
 
     /**
-     * Crops a square region from the source bitmap based on normalized coordinates (0.0 .. 1.0).
+     * Extracts exactly the contents visible within the square viewport based on pan, zoom and rotation.
      */
-    fun cropNormalized(source: Bitmap, rectNorm: RectF): Bitmap {
-        val left = (rectNorm.left * source.width).coerceIn(0f, source.width.toFloat()).toInt()
-        val top = (rectNorm.top * source.height).coerceIn(0f, source.height.toFloat()).toInt()
-        val right = (rectNorm.right * source.width).coerceIn(0f, source.width.toFloat()).toInt()
-        val bottom = (rectNorm.bottom * source.height).coerceIn(0f, source.height.toFloat()).toInt()
+    fun extractViewportSquare(
+        source: Bitmap,
+        viewportSizePx: Float,
+        scale: Float,
+        offsetX: Float,
+        offsetY: Float,
+        rotation: Float
+    ): Bitmap {
+        val targetSize = 800
+        val output = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
 
-        val width = (right - left).coerceAtLeast(1)
-        val height = (bottom - top).coerceAtLeast(1)
+        // Fit source inside viewport initially
+        val baseScale = maxOf(viewportSizePx / source.width, viewportSizePx / source.height)
+        val baseLeft = (viewportSizePx - source.width * baseScale) / 2f
+        val baseTop = (viewportSizePx - source.height * baseScale) / 2f
 
-        return Bitmap.createBitmap(source, left, top, width, height)
-    }
+        val matrix = Matrix()
+        matrix.postScale(baseScale, baseScale)
+        matrix.postTranslate(baseLeft, baseTop)
 
-    /**
-     * Crops the center square from an image if no manual rect is specified.
-     */
-    fun cropCenterSquare(source: Bitmap): Bitmap {
-        val minDim = minOf(source.width, source.height)
-        val xOffset = (source.width - minDim) / 2
-        val yOffset = (source.height - minDim) / 2
-        return Bitmap.createBitmap(source, xOffset, yOffset, minDim, minDim)
+        // User transforms centered on viewport
+        val centerX = viewportSizePx / 2f
+        val centerY = viewportSizePx / 2f
+        matrix.postScale(scale, scale, centerX, centerY)
+        matrix.postRotate(rotation, centerX, centerY)
+        matrix.postTranslate(offsetX, offsetY)
+
+        // Scale to target output bitmap
+        val scaleToOutput = targetSize / viewportSizePx
+        matrix.postScale(scaleToOutput, scaleToOutput)
+
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        canvas.drawBitmap(source, matrix, paint)
+
+        return output
     }
 
     /**
@@ -49,7 +66,7 @@ object BoardCropper {
     }
 
     /**
-     * Rotates a bitmap by a given number of degrees (e.g. 90, 180, 270).
+     * Rotates a bitmap by a given number of degrees.
      */
     fun rotate(source: Bitmap, degrees: Float): Bitmap {
         if (degrees % 360f == 0f) return source
