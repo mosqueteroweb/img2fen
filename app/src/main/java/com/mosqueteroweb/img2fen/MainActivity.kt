@@ -19,7 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.mosqueteroweb.img2fen.data.FenHistoryRepository
-import com.mosqueteroweb.img2fen.engine.ChessPieceClassifier
+import com.mosqueteroweb.img2fen.engine.DigitalChessClassifier
 import com.mosqueteroweb.img2fen.engine.GeminiVisionService
 import com.mosqueteroweb.img2fen.model.BoardPosition
 import com.mosqueteroweb.img2fen.theme.Img2FENTheme
@@ -38,7 +38,7 @@ sealed interface AppScreen {
 class MainActivity : ComponentActivity() {
 
     private val historyRepository by lazy { FenHistoryRepository(applicationContext) }
-    private val classifier by lazy { ChessPieceClassifier(applicationContext) }
+    private val digitalClassifier by lazy { DigitalChessClassifier(applicationContext) }
     private val geminiService by lazy { GeminiVisionService(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,19 +53,24 @@ class MainActivity : ComponentActivity() {
                 ) {
                     AppContent(
                         historyRepository = historyRepository,
-                        classifier = classifier,
+                        digitalClassifier = digitalClassifier,
                         geminiService = geminiService
                     )
                 }
             }
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        digitalClassifier.close()
+    }
 }
 
 @Composable
 fun AppContent(
     historyRepository: FenHistoryRepository,
-    classifier: ChessPieceClassifier,
+    digitalClassifier: DigitalChessClassifier,
     geminiService: GeminiVisionService
 ) {
     val context = LocalContext.current
@@ -115,11 +120,11 @@ fun AppContent(
                                         "Error con Gemini (${e.localizedMessage ?: "error de red"}). Analizando con modelo local...",
                                         Toast.LENGTH_LONG
                                     ).show()
-                                    val localBoard = classifier.classifyBoard(croppedBitmap)
+                                    val localBoard = digitalClassifier.classifyBoard(croppedBitmap)
                                     currentScreen = AppScreen.Result(localBoard)
                                 }
                             } else {
-                                val recognizedBoard = classifier.classifyBoard(croppedBitmap)
+                                val recognizedBoard = digitalClassifier.classifyBoard(croppedBitmap)
                                 currentScreen = AppScreen.Result(recognizedBoard)
                             }
                         } catch (e: Exception) {

@@ -11,8 +11,8 @@ android {
         applicationId = "com.mosqueteroweb.img2fen"
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
         ndk {
 
             abiFilters += listOf("arm64-v8a")
@@ -40,7 +40,7 @@ android {
     }
 
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite", "onnx")
     }
 
     packaging {
@@ -100,8 +100,8 @@ dependencies {
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.coil.compose)
 
-  // ML Kit & TensorFlow Lite
-  implementation(libs.mlkit.image.labeling.custom)
+  // ONNX Runtime for High-Accuracy 2D Chess Recognition
+  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
 }
 
 

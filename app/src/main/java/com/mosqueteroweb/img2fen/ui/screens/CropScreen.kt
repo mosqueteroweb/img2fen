@@ -4,11 +4,9 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
@@ -35,21 +34,24 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,11 +64,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mosqueteroweb.img2fen.engine.BoardCropper
+import com.mosqueteroweb.img2fen.engine.ChessboardDetector
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class RecognitionEngine {
     GEMINI_CLOUD,
@@ -83,16 +88,65 @@ fun CropScreen(
     onConfirmCrop: (croppedBitmap: Bitmap, engine: RecognitionEngine) -> Unit,
     onBack: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
     var rotation by remember { mutableFloatStateOf(0f) }
     var viewportPx by remember { mutableFloatStateOf(0f) }
+    var hasAutoFitted by remember { mutableStateOf(false) }
+    var isDetecting by remember { mutableStateOf(false) }
 
-    var selectedEngine by remember {
-        mutableStateOf(if (geminiApiKey.isNotBlank()) RecognitionEngine.GEMINI_CLOUD else RecognitionEngine.LOCAL_OFFLINE)
-    }
+    // Default to the high-accuracy offline 2D model
+    var selectedEngine by remember { mutableStateOf(RecognitionEngine.LOCAL_OFFLINE) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
+
+    fun autoDetectAndFit() {
+        if (viewportPx <= 0f) return
+        isDetecting = true
+        scope.launch(Dispatchers.Default) {
+            val corners = ChessboardDetector.findChessboard(imageBitmap)
+            if (corners != null) {
+                val bw = corners.width
+                val bh = corners.height
+                val bcx = (corners.x0 + corners.x1) / 2f
+                val bcy = (corners.y0 + corners.y1) / 2f
+
+                val baseScale = minOf(viewportPx / imageBitmap.width, viewportPx / imageBitmap.height)
+                val baseLeft = (viewportPx - imageBitmap.width * baseScale) / 2f
+                val baseTop = (viewportPx - imageBitmap.height * baseScale) / 2f
+
+                val boardSizeOnScreen = maxOf(bw, bh) * baseScale
+                if (boardSizeOnScreen > 10f) {
+                    val fitScale = (viewportPx / boardSizeOnScreen).coerceIn(0.5f, 6f)
+                    val screenBcx = baseLeft + bcx * baseScale
+                    val screenBcy = baseTop + bcy * baseScale
+
+                    val newOffsetX = (viewportPx / 2f - screenBcx) * fitScale
+                    val newOffsetY = (viewportPx / 2f - screenBcy) * fitScale
+
+                    withContext(Dispatchers.Main) {
+                        scale = fitScale
+                        offsetX = newOffsetX
+                        offsetY = newOffsetY
+                        rotation = 0f
+                    }
+                }
+            }
+            withContext(Dispatchers.Main) {
+                isDetecting = false
+            }
+        }
+    }
+
+    // Auto-detect chessboard on initial viewport measurement
+    LaunchedEffect(viewportPx) {
+        if (viewportPx > 0f && !hasAutoFitted) {
+            hasAutoFitted = true
+            autoDetectAndFit()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -125,7 +179,7 @@ fun CropScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "👉 Arrastra y pellizca la imagen para que el tablero encaje exactamente dentro del recuadro.",
+                text = "👉 Ajusta el tablero para que las 64 casillas coincidan con las líneas amarillas.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -144,18 +198,18 @@ fun CropScreen(
                     }
                     .pointerInput(Unit) {
                         detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(0.5f, 5f)
+                            scale = (scale * zoom).coerceIn(0.5f, 6f)
                             offsetX += pan.x
                             offsetY += pan.y
                         }
                     },
                 contentAlignment = Alignment.Center
             ) {
-                // Scaled and transformed image
+                // Scaled and transformed image with ContentScale.Fit so nothing gets clipped
                 Image(
                     bitmap = imageBitmap.asImageBitmap(),
                     contentDescription = "Diagrama a recortar",
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
@@ -198,8 +252,8 @@ fun CropScreen(
                     }
                 }
 
-                // Processing overlay
-                if (isProcessing) {
+                // Processing or Detecting overlay
+                if (isProcessing || isDetecting) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -210,10 +264,12 @@ fun CropScreen(
                             CircularProgressIndicator(color = Color.Yellow)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = if (selectedEngine == RecognitionEngine.GEMINI_CLOUD)
+                                text = if (isDetecting)
+                                    "Buscando tablero automáticamente..."
+                                else if (selectedEngine == RecognitionEngine.GEMINI_CLOUD)
                                     "Analizando con Gemini Vision AI..."
                                 else
-                                    "Analizando con modelo local...",
+                                    "Analizando casillas offline...",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
                             )
@@ -222,48 +278,62 @@ fun CropScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Quick adjustment controls
+            // Zoom controls: "Zoom:" and 3 icon buttons without text labels (User requirement)
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(
-                    onClick = { scale = (scale + 0.15f).coerceAtMost(5f) },
-                    enabled = !isProcessing
+                Text(
+                    text = "Zoom:",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                OutlinedIconButton(
+                    onClick = { scale = (scale + 0.15f).coerceAtMost(6f) },
+                    enabled = !isProcessing && !isDetecting
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Zoom +")
+                    Icon(Icons.Default.Add, contentDescription = "Aumentar zoom")
                 }
-
-                OutlinedButton(
+                Spacer(modifier = Modifier.width(10.dp))
+                OutlinedIconButton(
                     onClick = { scale = (scale - 0.15f).coerceAtLeast(0.5f) },
-                    enabled = !isProcessing
+                    enabled = !isProcessing && !isDetecting
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Zoom -")
+                    Icon(Icons.Default.Remove, contentDescription = "Reducir zoom")
                 }
-
-                OutlinedButton(
+                Spacer(modifier = Modifier.width(10.dp))
+                OutlinedIconButton(
                     onClick = {
                         scale = 1f
                         offsetX = 0f
                         offsetY = 0f
                         rotation = 0f
                     },
-                    enabled = !isProcessing
+                    enabled = !isProcessing && !isDetecting
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Reset")
+                    Icon(Icons.Default.Refresh, contentDescription = "Restablecer zoom")
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                FilledTonalButton(
+                    onClick = { autoDetectAndFit() },
+                    enabled = !isProcessing && !isDetecting
+                ) {
+                    Icon(Icons.Default.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Auto", fontWeight = FontWeight.SemiBold)
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Engine Selection Card
             Card(
@@ -284,6 +354,13 @@ fun CropScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FilterChip(
+                            selected = selectedEngine == RecognitionEngine.LOCAL_OFFLINE,
+                            onClick = { selectedEngine = RecognitionEngine.LOCAL_OFFLINE },
+                            label = { Text("📱 Modelo 2D Offline (Recomendado)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        FilterChip(
                             selected = selectedEngine == RecognitionEngine.GEMINI_CLOUD,
                             onClick = {
                                 selectedEngine = RecognitionEngine.GEMINI_CLOUD
@@ -291,15 +368,8 @@ fun CropScreen(
                                     showApiKeyDialog = true
                                 }
                             },
-                            label = { Text("✨ Gemini Vision (Nube)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        FilterChip(
-                            selected = selectedEngine == RecognitionEngine.LOCAL_OFFLINE,
-                            onClick = { selectedEngine = RecognitionEngine.LOCAL_OFFLINE },
-                            label = { Text("📱 Modelo Local (Offline)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                            modifier = Modifier.weight(1f)
+                            label = { Text("✨ Gemini Nube", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                            modifier = Modifier.weight(0.6f)
                         )
                     }
 
@@ -343,7 +413,7 @@ fun CropScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
-                enabled = !isProcessing
+                enabled = !isProcessing && !isDetecting
             ) {
                 Icon(Icons.Default.Check, contentDescription = null)
                 Spacer(modifier = Modifier.size(8.dp))
@@ -361,7 +431,7 @@ fun CropScreen(
             text = {
                 Column {
                     Text(
-                        text = "Gemini Vision AI analiza el diagrama con máxima precisión (reconoce todas las piezas y el turno en segundos). Es 100% gratuita para uso personal en Google AI Studio.",
+                        text = "Gemini Vision AI analiza el diagrama con modelos en la nube. Es gratuita en Google AI Studio si deseas usarla.",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Spacer(modifier = Modifier.height(12.dp))

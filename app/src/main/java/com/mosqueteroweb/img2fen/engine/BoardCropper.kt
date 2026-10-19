@@ -22,8 +22,8 @@ object BoardCropper {
         val output = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
 
-        // Fit source inside viewport initially
-        val baseScale = maxOf(viewportSizePx / source.width, viewportSizePx / source.height)
+        // Fit source inside viewport initially (letterboxed/pillarboxed like ContentScale.Fit)
+        val baseScale = minOf(viewportSizePx / source.width, viewportSizePx / source.height)
         val baseLeft = (viewportSizePx - source.width * baseScale) / 2f
         val baseTop = (viewportSizePx - source.height * baseScale) / 2f
 
@@ -46,6 +46,21 @@ object BoardCropper {
         canvas.drawBitmap(source, matrix, paint)
 
         return output
+    }
+
+    /**
+     * Crops a specific sub-rectangle defined by corners from the source bitmap and scales it to targetSize.
+     */
+    fun cropCorners(source: Bitmap, corners: BoardCorners, targetSize: Int = 800): Bitmap {
+        val x0 = corners.x0.coerceIn(0f, source.width.toFloat()).toInt()
+        val y0 = corners.y0.coerceIn(0f, source.height.toFloat()).toInt()
+        val x1 = corners.x1.coerceIn(0f, source.width.toFloat()).toInt()
+        val y1 = corners.y1.coerceIn(0f, source.height.toFloat()).toInt()
+
+        val w = maxOf(1, x1 - x0)
+        val h = maxOf(1, y1 - y0)
+        val cropped = Bitmap.createBitmap(source, x0, y0, w, h)
+        return if (w == targetSize && h == targetSize) cropped else Bitmap.createScaledBitmap(cropped, targetSize, targetSize, true)
     }
 
     /**
