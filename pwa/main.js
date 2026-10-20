@@ -703,10 +703,18 @@ function renderHistory() {
   history.forEach((fen) => {
     const item = document.createElement('div');
     item.className = 'history-item';
-    item.innerHTML = `
-      <span class="history-fen">${fen}</span>
-      <span class="history-arrow">➡️</span>
-    `;
+
+    const fenSpan = document.createElement('span');
+    fenSpan.className = 'history-fen';
+    fenSpan.textContent = fen;
+
+    const arrowSpan = document.createElement('span');
+    arrowSpan.className = 'history-arrow';
+    arrowSpan.textContent = '➡️';
+
+    item.appendChild(fenSpan);
+    item.appendChild(arrowSpan);
+
     item.addEventListener('click', () => {
       loadFenIntoBoard(fen);
       showScreen('result');
