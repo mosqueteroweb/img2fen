@@ -18,6 +18,7 @@ export default defineConfig({
         'pieces/*.svg',
         'model/*.onnx',
         'wasm/*.wasm',
+        'wasm/*.mjs',
       ],
       manifest: {
         name: 'Img2FEN - Diagramas a FEN de Ajedrez',
@@ -51,7 +52,7 @@ export default defineConfig({
         }
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,wasm,onnx}'],
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,wasm,onnx}'],
         maximumFileSizeToCacheInBytes: 35 * 1024 * 1024, // Allow up to 35MB for WASM and ONNX
         runtimeCaching: [
           {
