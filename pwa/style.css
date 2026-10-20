@@ -624,6 +624,113 @@ body {
   margin-bottom: 16px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+/* Drag & Drop Zone */
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background-color: var(--surface-color);
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px 16px;
+  margin-bottom: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
 }
+
+.drop-zone.dragover {
+  border-color: var(--primary-color);
+  background-color: rgba(76, 175, 80, 0.08);
+}
+
+.drop-icon {
+  font-size: 2rem;
+}
+
+.drop-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.drop-subtext {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* Responsive Desktop Optimizations */
+@media (min-width: 768px) {
+  body {
+    background-color: #0d0d0d;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 24px 16px;
+  }
+
+  .app-container {
+    width: 100%;
+    max-width: 580px;
+    min-height: auto;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75);
+    overflow: hidden;
+  }
+
+  .app-header {
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    padding: 16px 24px;
+  }
+
+  .app-main {
+    padding: 24px;
+  }
+
+  .viewport-wrapper {
+    max-height: 520px;
+  }
+
+  .board-wrapper {
+    max-height: 520px;
+  }
+
+  .hero-card {
+    padding: 32px 24px;
+  }
+
+  .actions-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .action-btn {
+    padding: 16px 20px;
+    font-size: 1.05rem;
+  }
+
+  .ctrl-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .modal-card {
+    max-width: 420px;
+    padding: 24px;
+  }
+
+  .piece-btn {
+    border-radius: var(--radius-md);
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-container {
+    max-width: 620px;
+  }
+}
+

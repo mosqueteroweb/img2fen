@@ -753,5 +753,74 @@ inputGallery.addEventListener('change', (e) => {
   }
 });
 
+/**
+ * -------------------------------------------------------------
+ * DESKTOP DRAG & DROP AND CLIPBOARD PASTE
+ * -------------------------------------------------------------
+ */
+const dropZone = document.getElementById('drop-zone');
+
+if (dropZone) {
+  dropZone.addEventListener('click', () => {
+    inputGallery.click();
+  });
+
+  ['dragenter', 'dragover'].forEach((eventName) => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.add('dragover');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach((eventName) => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove('dragover');
+    });
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    const files = e.dataTransfer?.files;
+    if (files && files[0] && files[0].type.startsWith('image/')) {
+      handleFile(files[0]);
+    }
+  });
+}
+
+// Window Drag & Drop support (drop anywhere on desktop)
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const files = e.dataTransfer?.files;
+  if (files && files[0] && files[0].type.startsWith('image/')) {
+    handleFile(files[0]);
+  }
+});
+
+// Paste from Clipboard (Ctrl+V / Cmd+V on desktop or mobile)
+window.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (items) {
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          handleFile(file);
+          break;
+        }
+      }
+    }
+  }
+});
+
+// Window resize handler to adapt canvas dynamically
+window.addEventListener('resize', () => {
+  if (screens.crop.classList.contains('active')) {
+    renderCanvas();
+  }
+});
+
 // Initial history load
 renderHistory();
