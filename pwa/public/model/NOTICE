@@ -1,0 +1,14 @@
+Img2FEN Model Notices & Credits
+================================
+
+board-segmentation.onnx
+-----------------------
+Model architecture: U-Net (Breakthrough U-Net V6)
+Creator: yamero999
+Source: https://huggingface.co/spaces/yamero999/chess-fen-generation-api / https://huggingface.co/yamero999/ultimate-v2-chess-onnx
+License: Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
+
+chess-tiles-v2.onnx
+-------------------
+Chess square tile classifier (13 classes)
+License: GPLv3 / MIT Compatible

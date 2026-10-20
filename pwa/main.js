@@ -8,10 +8,12 @@ ort.env.wasm.numThreads = 1;
 ort.env.wasm.proxy = false;
 
 const MODEL_PATH = `${ROOT_URL}model/chess-tiles-v2.onnx`;
+const SEGMENTATION_MODEL_PATH = `${ROOT_URL}model/board-segmentation.onnx`;
 const LABELS = '1KQRBNPkqrbnp';
 const TILE_PX = 32;
 
 let sessionPromise = null;
+let segmentationSessionPromise = null;
 
 async function getInferenceSession() {
   if (!sessionPromise) {
@@ -21,16 +23,36 @@ async function getInferenceSession() {
           executionProviders: ['wasm'],
           graphOptimizationLevel: 'all',
         });
-        console.log('ONNX Model loaded successfully in PWA!');
+        console.log('ONNX Tiles Model loaded successfully in PWA!');
         return session;
       } catch (err) {
-        console.error('Failed to load ONNX model via WASM:', err);
+        console.error('Failed to load ONNX tiles model:', err);
         sessionPromise = null;
         throw err;
       }
     })();
   }
   return sessionPromise;
+}
+
+async function getSegmentationSession() {
+  if (!segmentationSessionPromise) {
+    segmentationSessionPromise = (async () => {
+      try {
+        const session = await ort.InferenceSession.create(SEGMENTATION_MODEL_PATH, {
+          executionProviders: ['wasm'],
+          graphOptimizationLevel: 'all',
+        });
+        console.log('ONNX Board Segmentation model loaded successfully in PWA!');
+        return session;
+      } catch (err) {
+        console.warn('Failed to load board segmentation model:', err);
+        segmentationSessionPromise = null;
+        return null;
+      }
+    })();
+  }
+  return segmentationSessionPromise;
 }
 
 /**
@@ -90,6 +112,7 @@ const btnCropRotate90 = document.getElementById('btn-crop-rotate-90');
 const btnZoomIn = document.getElementById('btn-zoom-in');
 const btnZoomOut = document.getElementById('btn-zoom-out');
 const btnZoomReset = document.getElementById('btn-zoom-reset');
+const btnAutoDetect = document.getElementById('btn-auto-detect');
 const btnCornerFit = document.getElementById('btn-corner-fit');
 const turnWhite = document.getElementById('turn-white');
 const turnBlack = document.getElementById('turn-black');
@@ -155,6 +178,10 @@ function handleFile(file) {
       resetCropState();
       showScreen('crop');
       renderCanvas();
+      // Auto-detect chessboard using AI segmentation
+      setTimeout(() => {
+        autoDetectChessboardWithAI(false);
+      }, 150);
     };
     img.src = e.target.result;
   };
@@ -430,6 +457,196 @@ turnBlack.addEventListener('click', () => {
 btnCropBack.addEventListener('click', () => showScreen('home'));
 btnResultBack.addEventListener('click', () => showScreen('home'));
 btnResultNew.addEventListener('click', () => showScreen('home'));
+
+/**
+ * -------------------------------------------------------------
+ * AI CHESSBOARD DETECTION & AUTO-CROP (U-Net Segmentation)
+ * -------------------------------------------------------------
+ */
+async function autoDetectChessboardWithAI(manual = false) {
+  if (!currentImage) return;
+
+  try {
+    if (manual) showToast('🔍 Detectando tablero con IA...');
+    const session = await getSegmentationSession();
+    if (!session) {
+      if (manual) showToast('El modelo de detección no está disponible.');
+      return;
+    }
+
+    // 1. Render to 256x256 offscreen canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(currentImage, 0, 0, 256, 256);
+
+    const imgData = ctx.getImageData(0, 0, 256, 256);
+    const data = imgData.data;
+
+    // 2. Prepare NCHW float32 tensor
+    const tensorData = new Float32Array(3 * 256 * 256);
+    const channelSize = 256 * 256;
+
+    for (let i = 0; i < channelSize; i++) {
+      const idx = i * 4;
+      tensorData[i] = data[idx] / 255.0; // R
+      tensorData[channelSize + i] = data[idx + 1] / 255.0; // G
+      tensorData[channelSize * 2 + i] = data[idx + 2] / 255.0; // B
+    }
+
+    const inputTensor = new ort.Tensor('float32', tensorData, [1, 3, 256, 256]);
+    const results = await session.run({ input: inputTensor });
+    const rawOutput = results.output.data;
+
+    // 3. Threshold probability > 0.5 to create binary mask
+    const binary = new Uint8Array(256 * 256);
+    let positiveCount = 0;
+    for (let i = 0; i < 256 * 256; i++) {
+      const prob = 1.0 / (1.0 + Math.exp(-rawOutput[i]));
+      if (prob > 0.5) {
+        binary[i] = 1;
+        positiveCount++;
+      }
+    }
+
+    if (positiveCount < 1000) {
+      if (manual) showToast('No se detectó un tablero claro en la foto.');
+      return;
+    }
+
+    // 4. Find largest connected component (BFS) to eliminate stray noise
+    const labels = new Int32Array(256 * 256);
+    const queue = new Int32Array(256 * 256);
+    let currentLabel = 0;
+    const componentSizes = {};
+
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        const startIdx = (y << 8) + x;
+        if (binary[startIdx] === 1 && labels[startIdx] === 0) {
+          currentLabel++;
+          let head = 0;
+          let tail = 0;
+          queue[tail++] = startIdx;
+          labels[startIdx] = currentLabel;
+
+          while (head < tail) {
+            const curr = queue[head++];
+            const cy = curr >> 8;
+            const cx = curr & 255;
+
+            if (cy > 0) {
+              const n = ((cy - 1) << 8) + cx;
+              if (binary[n] === 1 && labels[n] === 0) { labels[n] = currentLabel; queue[tail++] = n; }
+            }
+            if (cy < 255) {
+              const n = ((cy + 1) << 8) + cx;
+              if (binary[n] === 1 && labels[n] === 0) { labels[n] = currentLabel; queue[tail++] = n; }
+            }
+            if (cx > 0) {
+              const n = (cy << 8) + (cx - 1);
+              if (binary[n] === 1 && labels[n] === 0) { labels[n] = currentLabel; queue[tail++] = n; }
+            }
+            if (cx < 255) {
+              const n = (cy << 8) + (cx + 1);
+              if (binary[n] === 1 && labels[n] === 0) { labels[n] = currentLabel; queue[tail++] = n; }
+            }
+          }
+          componentSizes[currentLabel] = tail;
+        }
+      }
+    }
+
+    let maxLabel = 0;
+    let maxSize = 0;
+    for (const [lbl, sz] of Object.entries(componentSizes)) {
+      if (sz > maxSize) {
+        maxSize = sz;
+        maxLabel = parseInt(lbl, 10);
+      }
+    }
+
+    if (maxSize < 1000) {
+      if (manual) showToast('No se encontró un tablero reconocible.');
+      return;
+    }
+
+    // 5. Bounding box of main board component in 256x256
+    let minX = 256, maxX = 0, minY = 256, maxY = 0;
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        if (labels[(y << 8) + x] === maxLabel) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    // Add a slight 1% edge padding so outer borders are preserved
+    const padX = Math.round((maxX - minX) * 0.012);
+    const padY = Math.round((maxY - minY) * 0.012);
+    minX = Math.max(0, minX - padX);
+    maxX = Math.min(256, maxX + padX);
+    minY = Math.max(0, minY - padY);
+    maxY = Math.min(256, maxY + padY);
+
+    // Convert from 256x256 space to original image pixels
+    const origW = currentImage.width;
+    const origH = currentImage.height;
+
+    const realXmin = (minX / 256) * origW;
+    const realXmax = (maxX / 256) * origW;
+    const realYmin = (minY / 256) * origH;
+    const realYmax = (maxY / 256) * origH;
+
+    // Convert to viewport screen space
+    const rect = cropViewport.getBoundingClientRect();
+    const viewportPx = rect.width || 400;
+    const baseScale = Math.min(viewportPx / origW, viewportPx / origH);
+    const drawW = origW * baseScale;
+    const drawH = origH * baseScale;
+    const drawLeft = (viewportPx - drawW) / 2;
+    const drawTop = (viewportPx - drawH) / 2;
+
+    const boardOnScreenW = (realXmax - realXmin) * baseScale;
+    const boardOnScreenH = (realYmax - realYmin) * baseScale;
+
+    // Auto-zoom if the board is smaller than 80% of viewport
+    const targetScale = Math.min(Math.max((viewportPx * 0.90) / Math.max(boardOnScreenW, boardOnScreenH), 1.0), 4.0);
+
+    const boardCenterImgX = (realXmin + realXmax) / 2;
+    const boardCenterImgY = (realYmin + realYmax) / 2;
+    const screenBoardCenterX = drawLeft + boardCenterImgX * baseScale;
+    const screenBoardCenterY = drawTop + boardCenterImgY * baseScale;
+
+    scale = targetScale;
+    offsetX = (viewportPx / 2 - screenBoardCenterX) * targetScale;
+    offsetY = (viewportPx / 2 - screenBoardCenterY) * targetScale;
+    rotation = 0;
+
+    const fittedW = boardOnScreenW * targetScale;
+    const fittedH = boardOnScreenH * targetScale;
+    const leftPx = (viewportPx - fittedW) / 2;
+    const topPx = (viewportPx - fittedH) / 2;
+
+    gridLeft = Math.max(0, Math.min(95, (leftPx / viewportPx) * 100));
+    gridRight = Math.max(gridLeft + 5, Math.min(100, ((leftPx + fittedW) / viewportPx) * 100));
+    gridTop = Math.max(0, Math.min(95, (topPx / viewportPx) * 100));
+    gridBottom = Math.max(gridTop + 5, Math.min(100, ((topPx + fittedH) / viewportPx) * 100));
+
+    updateGridOverlayStyle();
+    renderCanvas();
+    showToast('✨ Tablero encuadrado automáticamente con IA', 2500);
+  } catch (err) {
+    console.warn('[PWA] Error en autoDetectChessboardWithAI:', err);
+    if (manual) showToast('Error al analizar la imagen.');
+  }
+}
+
+btnAutoDetect?.addEventListener('click', () => autoDetectChessboardWithAI(true));
 
 /**
  * -------------------------------------------------------------
@@ -1007,7 +1224,7 @@ async function handleCheckForUpdates() {
         window.location.reload();
       }
     } else {
-      showToast('✅ Ya tienes la última versión (v1.5.0)', 2500);
+      showToast('✅ Ya tienes la última versión (v2.0.0)', 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);

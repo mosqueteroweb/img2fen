@@ -516,6 +516,17 @@ body {
   border-color: #79373f;
 }
 
+.auto-btn {
+  background-color: #1a365d;
+  border-color: #2b6cb0;
+  color: #90cdf4;
+}
+
+.auto-btn:hover {
+  background-color: #2a4365;
+  border-color: #3182ce;
+}
+
 .corner-btn {
   background-color: #3e2723;
   border-color: #5d4037;

@@ -85,3 +85,12 @@ SOFTWARE.
 - **Componentes**: AndroidX, Jetpack Compose, Kotlinx Coroutines, Kotlinx Serialization, Coil.
 - **Titulares de los derechos**: The Android Open Source Project, Google LLC, JetBrains s.r.o.
 - **Licencia**: Apache License 2.0 (compatible con GNU GPLv3 según las directrices de la Free Software Foundation).
+
+---
+
+## 5. Modelo Neuronal de Segmentación y Detección de Tableros (U-Net)
+
+- **Componente**: `board-segmentation.onnx` (U-Net Breakthrough V6).
+- **Autor / Creador**: yamero999 ([Hugging Face Space](https://huggingface.co/spaces/yamero999/chess-fen-generation-api) / [Model Hub](https://huggingface.co/yamero999/ultimate-v2-chess-onnx)).
+- **Licencia**: Apache License 2.0 (compatible con GNU GPLv3 según las directrices de la Free Software Foundation).
+- **Descripción**: Red neuronal convolucional entrenada para segmentar y encuadrar automáticamente tableros de ajedrez en fotografías y capturas de pantalla, ejecutada localmente en el dispositivo mediante ONNX Runtime WebAssembly.
