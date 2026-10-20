@@ -156,14 +156,25 @@ const loadingText = document.getElementById('loading-text');
  * -------------------------------------------------------------
  */
 function showScreen(name) {
-  Object.keys(screens).forEach((key) => {
-    screens[key].classList.toggle('active', key === name);
+  const allScreens = ['home', 'crop', 'result'];
+  allScreens.forEach((key) => {
+    const el = document.getElementById(`screen-${key}`);
+    if (el) {
+      el.classList.toggle('active', key === name);
+    }
   });
+
+  window.scrollTo({ top: 0, behavior: 'instant' });
+
   if (name === 'crop') {
     requestAnimationFrame(() => {
       renderCanvas();
       renderPerspectiveGrid();
     });
+    setTimeout(() => {
+      renderCanvas();
+      renderPerspectiveGrid();
+    }, 60);
   }
 }
 
@@ -432,8 +443,8 @@ function renderCanvas() {
   if (!currentImage) return;
 
   const rect = cropViewport.getBoundingClientRect();
-  const width = Math.round(rect.width);
-  const height = Math.round(rect.height);
+  const width = Math.round(rect.width) || 400;
+  const height = Math.round(rect.height) || 400;
 
   if (cropCanvas.width !== width || cropCanvas.height !== height) {
     cropCanvas.width = width;
@@ -1446,15 +1457,18 @@ let swRegistration = null;
 updateServiceWorkerFn = registerSW({
   immediate: true,
   onNeedRefresh() {
-    console.log('[PWA] Nueva versión disponible. Aplicando actualización...');
-    showToast('⚡ Nueva versión encontrada. Actualizando...', 2500);
-    setTimeout(() => {
-      if (updateServiceWorkerFn) {
-        updateServiceWorkerFn(true);
-      } else {
-        window.location.reload();
-      }
-    }, 600);
+    console.log('[PWA] Nueva versión disponible en segundo plano.');
+    // Only auto-reload if user is idle on the home screen with no image loaded
+    if (!currentImage && document.getElementById('screen-home')?.classList.contains('active')) {
+      showToast('⚡ Actualizando a la última versión...', 2000);
+      setTimeout(() => {
+        if (updateServiceWorkerFn) {
+          updateServiceWorkerFn(true);
+        } else {
+          window.location.reload();
+        }
+      }, 500);
+    }
   },
   onOfflineReady() {
     console.log('[PWA] Aplicación lista para funcionar offline.');
@@ -1463,25 +1477,31 @@ updateServiceWorkerFn = registerSW({
     swRegistration = registration;
     console.log('[PWA] Service Worker registrado correctamente.');
     if (registration) {
-      // 1. Chequeo automático al abrir la aplicación (tras 1 segundo de cortesía)
+      // 1. Chequeo automático al abrir la aplicación (tras 1.5s de cortesía)
       setTimeout(() => {
-        try {
-          registration.update().catch(() => {});
-        } catch (_) {}
-      }, 1000);
+        if (!currentImage) {
+          try {
+            registration.update().catch(() => {});
+          } catch (_) {}
+        }
+      }, 1500);
 
-      // 2. Chequeo automático cuando la app vuelve a primer plano
+      // 2. Chequeo automático cuando la app vuelve a primer plano (solo si no hay imagen en proceso)
       window.addEventListener('focus', () => {
-        try {
-          registration.update().catch(() => {});
-        } catch (_) {}
+        if (!currentImage && document.getElementById('screen-home')?.classList.contains('active')) {
+          try {
+            registration.update().catch(() => {});
+          } catch (_) {}
+        }
       });
 
       // 3. Chequeo recurrente cada 15 minutos mientras esté abierta
       setInterval(() => {
-        try {
-          registration.update().catch(() => {});
-        } catch (_) {}
+        if (!currentImage) {
+          try {
+            registration.update().catch(() => {});
+          } catch (_) {}
+        }
       }, 15 * 60 * 1000);
     }
   },
@@ -1493,9 +1513,14 @@ updateServiceWorkerFn = registerSW({
 // Listener de seguridad ante cambio de controlador (skipWaiting aplicado)
 let refreshing = false;
 navigator.serviceWorker?.addEventListener('controllerchange', () => {
-  if (!refreshing) {
+  if (refreshing) return;
+  // Never disrupt active user session if an image is loaded or user is not on home screen
+  const isIdle = !currentImage && document.getElementById('screen-home')?.classList.contains('active');
+  if (isIdle) {
     refreshing = true;
     window.location.reload();
+  } else {
+    console.log('[PWA] Nueva versión lista. Se mantendrá la pantalla actual sin interrumpir.');
   }
 });
 
@@ -1531,7 +1556,7 @@ async function handleCheckForUpdates() {
         window.location.reload();
       }
     } else {
-      showToast('✅ Ya tienes la última versión (v2.3.0)', 2500);
+      showToast('✅ Ya tienes la última versión (v2.3.1)', 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);
