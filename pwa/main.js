@@ -884,5 +884,46 @@ window.addEventListener('resize', () => {
   }
 });
 
+/**
+ * -------------------------------------------------------------
+ * PWA INSTALLATION PROMPT
+ * -------------------------------------------------------------
+ */
+const btnInstallPwa = document.getElementById('btn-install-pwa');
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Prevent Chrome 67 and earlier from automatically showing the prompt
+  e.preventDefault();
+  // Stash the event so it can be triggered later.
+  deferredInstallPrompt = e;
+  // Update UI notify the user they can install the PWA
+  if (btnInstallPwa) {
+    btnInstallPwa.classList.remove('hidden');
+  }
+});
+
+if (btnInstallPwa) {
+  btnInstallPwa.addEventListener('click', async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const { outcome } = await deferredInstallPrompt.userChoice;
+      console.log(`User response to the install prompt: ${outcome}`);
+      deferredInstallPrompt = null;
+      btnInstallPwa.classList.add('hidden');
+    } else {
+      // Fallback instruction for browsers where prompt isn't directly triggerable
+      alert('Para instalar Img2FEN:\n\n- En Chrome / Edge: Pulsa el icono de instalar en la barra de direcciones.\n- En iOS (Safari): Pulsa el botón Compartir y elige "Añadir a pantalla de inicio".\n- En Android: Abre el menú de 3 puntos y pulsa "Instalar aplicación".');
+    }
+  });
+}
+
+window.addEventListener('appinstalled', () => {
+  console.log('Img2FEN installed successfully!');
+  if (btnInstallPwa) {
+    btnInstallPwa.classList.add('hidden');
+  }
+});
+
 // Initial history load
 renderHistory();
