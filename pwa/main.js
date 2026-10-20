@@ -718,9 +718,194 @@ btnReopenCrop?.addEventListener('click', () => {
 
 /**
  * -------------------------------------------------------------
- * AI CHESSBOARD DETECTION & AUTO-CROP (U-Net Segmentation)
+ * SMART CHESSBOARD DETECTION:
+ * 1. Periodic 1D Gradient Projection + Bimodal 2-Color Checkerboard Verification
+ * 2. Fallback to U-Net Neural Segmentation for angled/tilted photos
  * -------------------------------------------------------------
  */
+function detectChessboardByGridAndColor(img) {
+  try {
+    const origW = img.width;
+    const origH = img.height;
+    if (!origW || !origH) return null;
+
+    // Scale to max 512px for lightning-fast sub-5ms projection analysis
+    const maxDim = 512;
+    const scale = Math.min(1.0, maxDim / Math.max(origW, origH));
+    const sw = Math.round(origW * scale);
+    const sh = Math.round(origH * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = sw;
+    canvas.height = sh;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, sw, sh);
+
+    const imgData = ctx.getImageData(0, 0, sw, sh).data;
+    const gray = new Uint8Array(sw * sh);
+    for (let i = 0; i < gray.length; i++) {
+      const idx = i * 4;
+      gray[i] = (imgData[idx] * 299 + imgData[idx + 1] * 587 + imgData[idx + 2] * 114) / 1000;
+    }
+
+    // 1D Gradient Projections
+    const colGrad = new Float32Array(sw);
+    const rowGrad = new Float32Array(sh);
+
+    // Stride 2 for speed
+    for (let x = 1; x < sw - 1; x++) {
+      let s = 0;
+      for (let y = 1; y < sh - 1; y += 2) {
+        const idxL = y * sw + (x - 1);
+        const idxR = y * sw + (x + 1);
+        s += Math.abs(gray[idxR] - gray[idxL]);
+      }
+      colGrad[x] = s;
+    }
+
+    for (let y = 1; y < sh - 1; y++) {
+      let s = 0;
+      const rowOffset = y * sw;
+      const rowOffsetU = (y - 1) * sw;
+      const rowOffsetD = (y + 1) * sw;
+      for (let x = 1; x < sw - 1; x += 2) {
+        s += Math.abs(gray[rowOffsetD + x] - gray[rowOffsetU + x]);
+      }
+      rowGrad[y] = s;
+    }
+
+    const minSz = Math.floor(Math.min(sw, sh) * 0.40);
+    const maxSz = Math.floor(Math.min(sw, sh) * 1.0);
+
+    let bestColScore = 0;
+    let bestX0 = 0;
+    let bestW = 0;
+    let bestStep = 0;
+
+    for (let size = minSz; size <= maxSz; size += 2) {
+      const step = size / 8.0;
+      for (let x0 = 0; x0 <= sw - size; x0 += 2) {
+        let score = 0;
+        for (let k = 0; k < 9; k++) {
+          const xk = Math.round(x0 + k * step);
+          let maxV = colGrad[xk];
+          if (xk > 0 && colGrad[xk - 1] > maxV) maxV = colGrad[xk - 1];
+          if (xk > 1 && colGrad[xk - 2] > maxV) maxV = colGrad[xk - 2];
+          if (xk < sw - 1 && colGrad[xk + 1] > maxV) maxV = colGrad[xk + 1];
+          if (xk < sw - 2 && colGrad[xk + 2] > maxV) maxV = colGrad[xk + 2];
+          score += maxV;
+        }
+        if (score > bestColScore) {
+          bestColScore = score;
+          bestX0 = x0;
+          bestW = size;
+          bestStep = step;
+        }
+      }
+    }
+
+    if (bestColScore === 0) return null;
+
+    // Search row grid with matching step
+    const minRowSz = Math.floor(bestStep * 7.7);
+    const maxRowSz = Math.ceil(bestStep * 8.3);
+
+    let bestRowScore = 0;
+    let bestY0 = 0;
+    let bestH = 0;
+
+    for (let size = minRowSz; size <= maxRowSz; size++) {
+      const rStep = size / 8.0;
+      for (let y0 = 0; y0 <= sh - size; y0 += 2) {
+        let score = 0;
+        for (let k = 0; k < 9; k++) {
+          const yk = Math.round(y0 + k * rStep);
+          let maxV = rowGrad[yk];
+          if (yk > 0 && rowGrad[yk - 1] > maxV) maxV = rowGrad[yk - 1];
+          if (yk > 1 && rowGrad[yk - 2] > maxV) maxV = rowGrad[yk - 2];
+          if (yk < sh - 1 && rowGrad[yk + 1] > maxV) maxV = rowGrad[yk + 1];
+          if (yk < sh - 2 && rowGrad[yk + 2] > maxV) maxV = rowGrad[yk + 2];
+          score += maxV;
+        }
+        if (score > bestRowScore) {
+          bestRowScore = score;
+          bestY0 = y0;
+          bestH = size;
+        }
+      }
+    }
+
+    if (bestRowScore === 0) return null;
+
+    const aspect = bestW / bestH;
+    if (aspect < 0.90 || aspect > 1.10) return null;
+
+    // 2-Color Checkerboard contrast verification
+    const stepX = bestW / 8.0;
+    const stepY = bestH / 8.0;
+    let lightSumR = 0, lightSumG = 0, lightSumB = 0, lightCount = 0;
+    let darkSumR = 0, darkSumG = 0, darkSumB = 0, darkCount = 0;
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const px = Math.min(sw - 1, Math.max(0, Math.round(bestX0 + (c + 0.20) * stepX)));
+        const py = Math.min(sh - 1, Math.max(0, Math.round(bestY0 + (r + 0.20) * stepY)));
+        const idx = (py * sw + px) * 4;
+        const R = imgData[idx];
+        const G = imgData[idx + 1];
+        const B = imgData[idx + 2];
+
+        if ((r + c) % 2 === 0) {
+          lightSumR += R; lightSumG += G; lightSumB += B; lightCount++;
+        } else {
+          darkSumR += R; darkSumG += G; darkSumB += B; darkCount++;
+        }
+      }
+    }
+
+    const avgLightR = lightSumR / lightCount;
+    const avgLightG = lightSumG / lightCount;
+    const avgLightB = lightSumB / lightCount;
+
+    const avgDarkR = darkSumR / darkCount;
+    const avgDarkG = darkSumG / darkCount;
+    const avgDarkB = darkSumB / darkCount;
+
+    const colorDist = Math.hypot(avgLightR - avgDarkR, avgLightG - avgDarkG, avgLightB - avgDarkB);
+    if (colorDist < 20) {
+      console.warn('[PWA] Grid detected but checkerboard color contrast is too low:', colorDist);
+      return null;
+    }
+
+    // Map back to original image coordinates
+    const invScale = 1.0 / scale;
+    return {
+      realXmin: Math.max(0, Math.round(bestX0 * invScale)),
+      realXmax: Math.min(origW, Math.round((bestX0 + bestW) * invScale)),
+      realYmin: Math.max(0, Math.round(bestY0 * invScale)),
+      realYmax: Math.min(origH, Math.round((bestY0 + bestH) * invScale)),
+      contrast: colorDist,
+      method: 'grid-projection'
+    };
+  } catch (err) {
+    console.warn('[PWA] detectChessboardByGridAndColor error:', err);
+    return null;
+  }
+}
+
+async function detectBoardBounds(img) {
+  // 1. Try high-precision periodic grid & 2-color detector (takes ~5ms)
+  const gridBounds = detectChessboardByGridAndColor(img);
+  if (gridBounds) {
+    console.log('[PWA] Board detected via Periodic Grid & Color Detector:', gridBounds);
+    return gridBounds;
+  }
+
+  // 2. Fallback to U-Net neural segmentation
+  console.log('[PWA] Falling back to U-Net segmentation...');
+  return await detectBoardBoundsWithUNet(img);
+}
+
 async function detectBoardBoundsWithUNet(img) {
   try {
     const session = await getSegmentationSession();
@@ -858,7 +1043,7 @@ async function autoDetectChessboardWithAI(manual = false) {
 
   try {
     if (manual) showToast('🔍 Detectando tablero con IA...');
-    const bounds = await detectBoardBoundsWithUNet(currentImage);
+    const bounds = await detectBoardBounds(currentImage);
 
     if (!bounds) {
       if (manual) showToast('No se detectó un tablero claro en la foto.');
@@ -927,10 +1112,10 @@ async function processImageDirectlyToResult() {
   try {
     showLoading('Reconociendo posición con IA...');
 
-    // 1. Detect board location with U-Net (runs in ~30ms)
-    const bounds = await detectBoardBoundsWithUNet(currentImage);
+    // 1. Detect board location with Periodic Grid + U-Net hybrid detector
+    const bounds = await detectBoardBounds(currentImage);
 
-    // If U-Net did NOT detect a clear board (e.g. tilted photo or angled board)
+    // If neither detector found a clear board (e.g. extreme tilt or non-chess photo)
     if (!bounds) {
       hideLoading();
       showToast('⚠️ No se reconoció el tablero automáticamente. Ajusta las esquinas.', 4000);
@@ -1763,7 +1948,7 @@ async function handleCheckForUpdates() {
         window.location.reload();
       }
     } else {
-      showToast('✅ Ya tienes la última versión (v2.5.0)', 2500);
+      showToast('✅ Ya tienes la última versión (v2.5.1)', 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);
