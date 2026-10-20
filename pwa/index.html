@@ -20,7 +20,7 @@
         <img src="icons/icon-512.png" alt="Img2FEN" class="app-logo">
         <div class="app-title-group">
           <h1 class="app-title">Img2FEN</h1>
-          <span class="app-version" id="app-version-badge" title="Toca para buscar actualizaciones">v2.1.0</span>
+          <span class="app-version" id="app-version-badge" title="Toca para buscar actualizaciones">v2.2.0</span>
           <button id="btn-check-update" class="update-btn" title="Comprobar si hay una nueva versión">
             <span class="update-icon">🔄</span>
             <span class="update-text">Actualizar</span>
@@ -81,39 +81,27 @@
           <div style="width: 32px;"></div>
         </div>
 
-        <p class="crop-instruction">👉 Arrastra los 4 puntos amarillos de las esquinas de la cuadrícula o mueve la imagen.</p>
+        <p class="crop-instruction">👉 Arrastra cada una de las 4 esquinas (A8, H8, H1, A1) independientemente para ajustar cualquier ángulo o perspectiva.</p>
 
         <div class="crop-workspace-layout">
           <div class="crop-main-col">
-            <!-- Viewport Container with Adjustable 8x8 Grid -->
+            <!-- Viewport Container with Adjustable 4-Corner Perspective Grid -->
             <div class="viewport-wrapper">
               <div id="crop-viewport" class="crop-viewport">
                 <canvas id="crop-canvas"></canvas>
-                <!-- 8x8 Dual-Stroke Adjustable Grid Overlay -->
-                <div id="grid-overlay" class="grid-overlay">
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                <!-- SVG Perspective 8x8 Grid & Shaded Cutout -->
+                <svg id="grid-svg" class="grid-svg">
+                  <path id="grid-mask-path" class="grid-mask-path"></path>
+                  <polygon id="grid-polygon" class="grid-polygon"></polygon>
+                  <g id="grid-inner-lines" class="grid-inner-lines"></g>
+                </svg>
 
-                  <!-- Corner & Edge Resize Handles -->
-                  <div class="grid-handle handle-tl" data-handle="tl" title="Arrastrar esquina superior izquierda (A8)"></div>
-                  <div class="grid-handle handle-tr" data-handle="tr" title="Arrastrar esquina superior derecha (H8)"></div>
-                  <div class="grid-handle handle-bl" data-handle="bl" title="Arrastrar esquina inferior izquierda (A1)"></div>
-                  <div class="grid-handle handle-br" data-handle="br" title="Arrastrar esquina inferior derecha (H1)"></div>
-                </div>
+                <!-- 4 Independent Corner Drag Handles -->
+                <div id="corner-tl" class="grid-handle handle-tl" data-handle="tl" title="Esquina superior izquierda (A8)"><span>A8</span></div>
+                <div id="corner-tr" class="grid-handle handle-tr" data-handle="tr" title="Esquina superior derecha (H8)"><span>H8</span></div>
+                <div id="corner-br" class="grid-handle handle-br" data-handle="br" title="Esquina inferior derecha (H1)"><span>H1</span></div>
+                <div id="corner-bl" class="grid-handle handle-bl" data-handle="bl" title="Esquina inferior izquierda (A1)"><span>A1</span></div>
+
                 <!-- Ephemeral Rotation Angle Badge -->
                 <div id="rotation-badge" class="rotation-badge hidden">↺ 0°</div>
               </div>

@@ -73,11 +73,13 @@ let rotation = 0.0; // in degrees
 let isRotating = false;
 let rotationDismissTimer = null;
 
-// Adjustable Grid Rect (in percentages 0..100 of viewport)
-let gridLeft = 0;
-let gridTop = 0;
-let gridRight = 100;
-let gridBottom = 100;
+// 4 Independent Corner Control Points (in percentages 0..100 of viewport)
+let gridCorners = {
+  tl: { x: 5, y: 5 },    // Top-Left (A8)
+  tr: { x: 95, y: 5 },   // Top-Right (H8)
+  br: { x: 95, y: 95 },  // Bottom-Right (H1)
+  bl: { x: 5, y: 95 }    // Bottom-Left (A1)
+};
 let activeHandle = null;
 
 // Touch tracking
@@ -121,7 +123,14 @@ const btnProcessScan = document.getElementById('btn-process-scan');
 const cropViewport = document.getElementById('crop-viewport');
 const cropCanvas = document.getElementById('crop-canvas');
 const cropCtx = cropCanvas.getContext('2d');
-const gridOverlay = document.getElementById('grid-overlay');
+const gridSvg = document.getElementById('grid-svg');
+const gridMaskPath = document.getElementById('grid-mask-path');
+const gridPolygon = document.getElementById('grid-polygon');
+const gridInnerLines = document.getElementById('grid-inner-lines');
+const cornerTL = document.getElementById('corner-tl');
+const cornerTR = document.getElementById('corner-tr');
+const cornerBR = document.getElementById('corner-br');
+const cornerBL = document.getElementById('corner-bl');
 const rotationBadge = document.getElementById('rotation-badge');
 
 const chessboard = document.getElementById('chessboard');
@@ -151,7 +160,10 @@ function showScreen(name) {
     screens[key].classList.toggle('active', key === name);
   });
   if (name === 'crop') {
-    requestAnimationFrame(renderCanvas);
+    requestAnimationFrame(() => {
+      renderCanvas();
+      renderPerspectiveGrid();
+    });
   }
 }
 
@@ -190,20 +202,183 @@ function resetCropState() {
   offsetY = 0.0;
   rotation = 0.0;
   isRotating = false;
-  gridLeft = 0;
-  gridTop = 0;
-  gridRight = 100;
-  gridBottom = 100;
-  updateGridOverlayStyle();
+  gridCorners = {
+    tl: { x: 5, y: 5 },
+    tr: { x: 95, y: 5 },
+    br: { x: 95, y: 95 },
+    bl: { x: 5, y: 95 }
+  };
+  renderPerspectiveGrid();
   updateRotationBadge();
 }
 
-function updateGridOverlayStyle() {
-  if (!gridOverlay) return;
-  gridOverlay.style.left = `${gridLeft}%`;
-  gridOverlay.style.top = `${gridTop}%`;
-  gridOverlay.style.width = `${gridRight - gridLeft}%`;
-  gridOverlay.style.height = `${gridBottom - gridTop}%`;
+/**
+ * -------------------------------------------------------------
+ * PERSPECTIVE HOMOGRAPHY & 4-CORNER GEOMETRY
+ * -------------------------------------------------------------
+ */
+function getHomographyFromUnitSquare(p0, p1, p2, p3) {
+  const x0 = p0.x, y0 = p0.y;
+  const x1 = p1.x, y1 = p1.y;
+  const x2 = p2.x, y2 = p2.y;
+  const x3 = p3.x, y3 = p3.y;
+
+  const dx1 = x1 - x2;
+  const dx2 = x3 - x2;
+  const sx = x0 - x1 + x2 - x3;
+  const dy1 = y1 - y2;
+  const dy2 = y3 - y2;
+  const sy = y0 - y1 + y2 - y3;
+
+  if (Math.abs(sx) < 1e-7 && Math.abs(sy) < 1e-7) {
+    return [
+      x1 - x0, x3 - x0, x0,
+      y1 - y0, y3 - y0, y0,
+      0, 0, 1
+    ];
+  }
+
+  const det = dx1 * dy2 - dx2 * dy1;
+  if (Math.abs(det) < 1e-7) return null;
+
+  const g = (sx * dy2 - sy * dx2) / det;
+  const h = (dx1 * sy - dy1 * sx) / det;
+  const a = x1 - x0 + g * x1;
+  const b = x3 - x0 + h * x3;
+  const c = x0;
+  const d = y1 - y0 + g * y1;
+  const e = y3 - y0 + h * y3;
+  const f = y0;
+
+  return [a, b, c, d, e, f, g, h, 1];
+}
+
+function projectPoint(H, u, v) {
+  const x = H[0] * u + H[1] * v + H[2];
+  const y = H[3] * u + H[4] * v + H[5];
+  const w = H[6] * u + H[7] * v + H[8];
+  return { x: x / w, y: y / w };
+}
+
+function renderPerspectiveGrid() {
+  if (!gridSvg || !cropViewport) return;
+
+  const rect = cropViewport.getBoundingClientRect();
+  const w = rect.width || 400;
+  const h = rect.height || 400;
+
+  const p0 = { x: (gridCorners.tl.x / 100) * w, y: (gridCorners.tl.y / 100) * h }; // TL (A8)
+  const p1 = { x: (gridCorners.tr.x / 100) * w, y: (gridCorners.tr.y / 100) * h }; // TR (H8)
+  const p2 = { x: (gridCorners.br.x / 100) * w, y: (gridCorners.br.y / 100) * h }; // BR (H1)
+  const p3 = { x: (gridCorners.bl.x / 100) * w, y: (gridCorners.bl.y / 100) * h }; // BL (A1)
+
+  // Position 4 corner handles
+  if (cornerTL) { cornerTL.style.left = `${gridCorners.tl.x}%`; cornerTL.style.top = `${gridCorners.tl.y}%`; }
+  if (cornerTR) { cornerTR.style.left = `${gridCorners.tr.x}%`; cornerTR.style.top = `${gridCorners.tr.y}%`; }
+  if (cornerBR) { cornerBR.style.left = `${gridCorners.br.x}%`; cornerBR.style.top = `${gridCorners.br.y}%`; }
+  if (cornerBL) { cornerBL.style.left = `${gridCorners.bl.x}%`; cornerBL.style.top = `${gridCorners.bl.y}%`; }
+
+  const H = getHomographyFromUnitSquare(p0, p1, p2, p3);
+  if (!H) return;
+
+  // Darkened outer mask with inner quadrilateral cutout (evenodd rule)
+  if (gridMaskPath) {
+    gridMaskPath.setAttribute(
+      'd',
+      `M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z M ${p0.x.toFixed(1)} ${p0.y.toFixed(1)} L ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} L ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} L ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} Z`
+    );
+  }
+
+  // Outer border polygon
+  if (gridPolygon) {
+    gridPolygon.setAttribute(
+      'points',
+      `${p0.x.toFixed(1)},${p0.y.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)} ${p3.x.toFixed(1)},${p3.y.toFixed(1)}`
+    );
+  }
+
+  // 14 perspective internal grid lines (7 vertical + 7 horizontal)
+  if (gridInnerLines) {
+    let linesHtml = '';
+    // Vertical perspective lines
+    for (let k = 1; k < 8; k++) {
+      const u = k / 8;
+      const topPt = projectPoint(H, u, 0);
+      const botPt = projectPoint(H, u, 1);
+      linesHtml += `<line x1="${topPt.x.toFixed(1)}" y1="${topPt.y.toFixed(1)}" x2="${botPt.x.toFixed(1)}" y2="${botPt.y.toFixed(1)}" />`;
+    }
+    // Horizontal perspective lines
+    for (let k = 1; k < 8; k++) {
+      const v = k / 8;
+      const leftPt = projectPoint(H, 0, v);
+      const rightPt = projectPoint(H, 1, v);
+      linesHtml += `<line x1="${leftPt.x.toFixed(1)}" y1="${leftPt.y.toFixed(1)}" x2="${rightPt.x.toFixed(1)}" y2="${rightPt.y.toFixed(1)}" />`;
+    }
+    gridInnerLines.innerHTML = linesHtml;
+  }
+}
+
+/**
+ * Rectifies the arbitrary quadrilateral from sourceCanvas into a square 256x256 canvas
+ * using inverse perspective homography and bilinear interpolation.
+ */
+function extractWarpedBoard(sourceCanvas, H) {
+  const boardCanvas = document.createElement('canvas');
+  boardCanvas.width = 256;
+  boardCanvas.height = 256;
+  const bCtx = boardCanvas.getContext('2d');
+  const outputImgData = bCtx.createImageData(256, 256);
+  const outData = outputImgData.data;
+
+  const sCtx = sourceCanvas.getContext('2d');
+  const srcW = sourceCanvas.width;
+  const srcH = sourceCanvas.height;
+  const srcData = sCtx.getImageData(0, 0, srcW, srcH).data;
+
+  for (let y = 0; y < 256; y++) {
+    const v = (y + 0.5) / 256.0;
+    for (let x = 0; x < 256; x++) {
+      const u = (x + 0.5) / 256.0;
+      const px = H[0] * u + H[1] * v + H[2];
+      const py = H[3] * u + H[4] * v + H[5];
+      const pw = H[6] * u + H[7] * v + H[8];
+      const srcX = px / pw;
+      const srcY = py / pw;
+
+      const outIdx = (y * 256 + x) * 4;
+
+      if (srcX >= 0 && srcX < srcW && srcY >= 0 && srcY < srcH) {
+        const x0 = Math.floor(srcX);
+        const y0 = Math.floor(srcY);
+        const x1 = Math.min(x0 + 1, srcW - 1);
+        const y1 = Math.min(y0 + 1, srcH - 1);
+
+        const fx = srcX - x0;
+        const fy = srcY - y0;
+        const w00 = (1 - fx) * (1 - fy);
+        const w10 = fx * (1 - fy);
+        const w01 = (1 - fx) * fy;
+        const w11 = fx * fy;
+
+        const idx00 = (y0 * srcW + x0) * 4;
+        const idx10 = (y0 * srcW + x1) * 4;
+        const idx01 = (y1 * srcW + x0) * 4;
+        const idx11 = (y1 * srcW + x1) * 4;
+
+        outData[outIdx]     = w00 * srcData[idx00]     + w10 * srcData[idx10]     + w01 * srcData[idx01]     + w11 * srcData[idx11];
+        outData[outIdx + 1] = w00 * srcData[idx00 + 1] + w10 * srcData[idx10 + 1] + w01 * srcData[idx01 + 1] + w11 * srcData[idx11 + 1];
+        outData[outIdx + 2] = w00 * srcData[idx00 + 2] + w10 * srcData[idx10 + 2] + w01 * srcData[idx01 + 2] + w11 * srcData[idx11 + 2];
+        outData[outIdx + 3] = 255;
+      } else {
+        outData[outIdx]     = 0;
+        outData[outIdx + 1] = 0;
+        outData[outIdx + 2] = 0;
+        outData[outIdx + 3] = 255;
+      }
+    }
+  }
+  bCtx.putImageData(outputImgData, 0, 0);
+  return boardCanvas;
 }
 
 function updateRotationBadge() {
@@ -254,6 +429,7 @@ function renderCanvas() {
 
   cropCtx.drawImage(currentImage, -drawW / 2, -drawH / 2, drawW, drawH);
   cropCtx.restore();
+  renderPerspectiveGrid();
 }
 
 /**
@@ -273,6 +449,7 @@ cropViewport.addEventListener('touchstart', (e) => {
   const handleEl = e.target.closest('.grid-handle');
   if (handleEl) {
     activeHandle = handleEl.dataset.handle;
+    handleEl.classList.add('active');
     e.stopPropagation();
     return;
   }
@@ -300,22 +477,21 @@ function updateGridFromPointer(clientX, clientY) {
   const rect = cropViewport.getBoundingClientRect();
   const pctX = Math.min(Math.max(((clientX - rect.left) / rect.width) * 100, 0), 100);
   const pctY = Math.min(Math.max(((clientY - rect.top) / rect.height) * 100, 0), 100);
-  const minSpan = 20; // minimum 20% size
 
   if (activeHandle === 'tl') {
-    gridLeft = Math.min(pctX, gridRight - minSpan);
-    gridTop = Math.min(pctY, gridBottom - minSpan);
+    gridCorners.tl.x = pctX;
+    gridCorners.tl.y = pctY;
   } else if (activeHandle === 'tr') {
-    gridRight = Math.max(pctX, gridLeft + minSpan);
-    gridTop = Math.min(pctY, gridBottom - minSpan);
-  } else if (activeHandle === 'bl') {
-    gridLeft = Math.min(pctX, gridRight - minSpan);
-    gridBottom = Math.max(pctY, gridTop + minSpan);
+    gridCorners.tr.x = pctX;
+    gridCorners.tr.y = pctY;
   } else if (activeHandle === 'br') {
-    gridRight = Math.max(pctX, gridLeft + minSpan);
-    gridBottom = Math.max(pctY, gridTop + minSpan);
+    gridCorners.br.x = pctX;
+    gridCorners.br.y = pctY;
+  } else if (activeHandle === 'bl') {
+    gridCorners.bl.x = pctX;
+    gridCorners.bl.y = pctY;
   }
-  updateGridOverlayStyle();
+  renderPerspectiveGrid();
 }
 
 cropViewport.addEventListener('touchmove', (e) => {
@@ -356,7 +532,10 @@ cropViewport.addEventListener('touchend', (e) => {
   touchCount = e.touches.length;
   if (touchCount === 0) {
     isTouching = false;
-    activeHandle = null;
+    if (activeHandle) {
+      document.querySelectorAll('.grid-handle').forEach((h) => h.classList.remove('active'));
+      activeHandle = null;
+    }
   }
 });
 
@@ -369,6 +548,7 @@ cropViewport.addEventListener('mousedown', (e) => {
   const handleEl = e.target.closest('.grid-handle');
   if (handleEl) {
     activeHandle = handleEl.dataset.handle;
+    handleEl.classList.add('active');
     e.stopPropagation();
     return;
   }
@@ -390,7 +570,10 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', () => {
   isMouseDown = false;
-  activeHandle = null;
+  if (activeHandle) {
+    document.querySelectorAll('.grid-handle').forEach((h) => h.classList.remove('active'));
+    activeHandle = null;
+  }
 });
 
 cropViewport.addEventListener('wheel', (e) => {
@@ -438,6 +621,23 @@ btnZoomReset.addEventListener('click', () => {
   renderCanvas();
 });
 
+let cornerPresetIndex = 0;
+function cycleCornerPresets() {
+  cornerPresetIndex = (cornerPresetIndex + 1) % 3;
+  if (cornerPresetIndex === 0) {
+    gridCorners = { tl: { x: 5, y: 5 }, tr: { x: 95, y: 5 }, br: { x: 95, y: 95 }, bl: { x: 5, y: 95 } };
+    showToast('📐 Cuadrícula ajustada (90%)', 1500);
+  } else if (cornerPresetIndex === 1) {
+    gridCorners = { tl: { x: 15, y: 15 }, tr: { x: 85, y: 15 }, br: { x: 85, y: 85 }, bl: { x: 15, y: 85 } };
+    showToast('📐 Cuadrícula centrada (70%)', 1500);
+  } else {
+    gridCorners = { tl: { x: 20, y: 15 }, tr: { x: 80, y: 15 }, br: { x: 92, y: 88 }, bl: { x: 8, y: 88 } };
+    showToast('📐 Cuadrícula en perspectiva oblicua', 1500);
+  }
+  renderPerspectiveGrid();
+}
+btnCornerFit?.addEventListener('click', cycleCornerPresets);
+
 turnWhite.addEventListener('click', () => {
   activeColor = 'w';
   turnWhite.classList.add('active');
@@ -467,7 +667,7 @@ btnResultNew.addEventListener('click', () => showScreen('home'));
 
 btnReopenCrop?.addEventListener('click', () => {
   showScreen('crop');
-  updateGridOverlayStyle();
+  renderPerspectiveGrid();
   requestAnimationFrame(renderCanvas);
 });
 
@@ -648,12 +848,19 @@ async function autoDetectChessboardWithAI(manual = false) {
     const leftPx = (viewportPx - fittedW) / 2;
     const topPx = (viewportPx - fittedH) / 2;
 
-    gridLeft = Math.max(0, Math.min(95, (leftPx / viewportPx) * 100));
-    gridRight = Math.max(gridLeft + 5, Math.min(100, ((leftPx + fittedW) / viewportPx) * 100));
-    gridTop = Math.max(0, Math.min(95, (topPx / viewportPx) * 100));
-    gridBottom = Math.max(gridTop + 5, Math.min(100, ((topPx + fittedH) / viewportPx) * 100));
+    const leftPct = Math.max(0, Math.min(95, (leftPx / viewportPx) * 100));
+    const rightPct = Math.max(leftPct + 5, Math.min(100, ((leftPx + fittedW) / viewportPx) * 100));
+    const topPct = Math.max(0, Math.min(95, (topPx / viewportPx) * 100));
+    const bottomPct = Math.max(topPct + 5, Math.min(100, ((topPx + fittedH) / viewportPx) * 100));
 
-    updateGridOverlayStyle();
+    gridCorners = {
+      tl: { x: leftPct, y: topPct },
+      tr: { x: rightPct, y: topPct },
+      br: { x: rightPct, y: bottomPct },
+      bl: { x: leftPct, y: bottomPct }
+    };
+
+    renderPerspectiveGrid();
     renderCanvas();
     showToast('✨ Tablero encuadrado automáticamente con IA', 2500);
   } catch (err) {
@@ -704,17 +911,26 @@ async function processImageDirectlyToResult() {
       const screenTop = drawTop + bounds.realYmin * baseScale;
       const screenBottom = drawTop + bounds.realYmax * baseScale;
 
-      gridLeft = Math.max(0, Math.min(95, (screenLeft / viewportPx) * 100));
-      gridRight = Math.max(gridLeft + 5, Math.min(100, (screenRight / viewportPx) * 100));
-      gridTop = Math.max(0, Math.min(95, (screenTop / viewportPx) * 100));
-      gridBottom = Math.max(gridTop + 5, Math.min(100, (screenBottom / viewportPx) * 100));
+      const leftPct = Math.max(0, Math.min(95, (screenLeft / viewportPx) * 100));
+      const rightPct = Math.max(leftPct + 5, Math.min(100, (screenRight / viewportPx) * 100));
+      const topPct = Math.max(0, Math.min(95, (screenTop / viewportPx) * 100));
+      const bottomPct = Math.max(topPct + 5, Math.min(100, (screenBottom / viewportPx) * 100));
+
+      gridCorners = {
+        tl: { x: leftPct, y: topPct },
+        tr: { x: rightPct, y: topPct },
+        br: { x: rightPct, y: bottomPct },
+        bl: { x: leftPct, y: bottomPct }
+      };
     } else {
       // Fallback: draw full image if no clear board detected
       bCtx.drawImage(currentImage, 0, 0, currentImage.width, currentImage.height, 0, 0, 256, 256);
-      gridLeft = 0;
-      gridTop = 0;
-      gridRight = 100;
-      gridBottom = 100;
+      gridCorners = {
+        tl: { x: 5, y: 5 },
+        tr: { x: 95, y: 5 },
+        br: { x: 95, y: 95 },
+        bl: { x: 5, y: 95 }
+      };
     }
 
     // 2. Classify pieces and display result directly
@@ -802,22 +1018,19 @@ btnProcessScan?.addEventListener('click', async () => {
   try {
     showLoading('Re-analizando con el nuevo encuadre...');
 
-    const boardCanvas = document.createElement('canvas');
-    boardCanvas.width = 256;
-    boardCanvas.height = 256;
-    const bCtx = boardCanvas.getContext('2d');
-
     const rect = cropViewport.getBoundingClientRect();
-    const gLeftPx = (gridLeft / 100) * rect.width;
-    const gTopPx = (gridTop / 100) * rect.height;
-    const gWidthPx = ((gridRight - gridLeft) / 100) * rect.width;
-    const gHeightPx = ((gridBottom - gridTop) / 100) * rect.height;
+    const w = rect.width || 400;
+    const h = rect.height || 400;
 
-    bCtx.drawImage(
-      cropCanvas,
-      gLeftPx, gTopPx, gWidthPx, gHeightPx,
-      0, 0, 256, 256
-    );
+    const p0 = { x: (gridCorners.tl.x / 100) * w, y: (gridCorners.tl.y / 100) * h };
+    const p1 = { x: (gridCorners.tr.x / 100) * w, y: (gridCorners.tr.y / 100) * h };
+    const p2 = { x: (gridCorners.br.x / 100) * w, y: (gridCorners.br.y / 100) * h };
+    const p3 = { x: (gridCorners.bl.x / 100) * w, y: (gridCorners.bl.y / 100) * h };
+
+    const H = getHomographyFromUnitSquare(p0, p1, p2, p3);
+    if (!H) throw new Error('Las 4 esquinas no forman una cuadrícula válida.');
+
+    const boardCanvas = extractWarpedBoard(cropCanvas, H);
 
     await runTileInferenceOnBoardCanvas(boardCanvas);
     showToast('✨ Posición actualizada con el nuevo encuadre', 2500);
@@ -1261,7 +1474,7 @@ async function handleCheckForUpdates() {
         window.location.reload();
       }
     } else {
-      showToast('✅ Ya tienes la última versión (v2.1.0)', 2500);
+      showToast('✅ Ya tienes la última versión (v2.2.0)', 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);
