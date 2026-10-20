@@ -1,5 +1,4 @@
 import * as ort from 'onnxruntime-web/wasm';
-import { findChessboardCorners } from '@scoriiu/fenshot';
 
 // Configure pure WebAssembly paths using absolute document URL (not relative to bundled /assets/)
 const ROOT_URL = new URL('./', window.location.href).href;
@@ -84,11 +83,12 @@ const inputGallery = document.getElementById('input-gallery');
 const historyList = document.getElementById('history-list');
 
 const btnCropBack = document.getElementById('btn-crop-back');
+const btnRotateCcw1 = document.getElementById('btn-rotate-ccw-1');
+const btnRotateCw1 = document.getElementById('btn-rotate-cw-1');
 const btnCropRotate90 = document.getElementById('btn-crop-rotate-90');
 const btnZoomIn = document.getElementById('btn-zoom-in');
 const btnZoomOut = document.getElementById('btn-zoom-out');
 const btnZoomReset = document.getElementById('btn-zoom-reset');
-const btnAutoDetect = document.getElementById('btn-auto-detect');
 const btnCornerFit = document.getElementById('btn-corner-fit');
 const turnWhite = document.getElementById('turn-white');
 const turnBlack = document.getElementById('turn-black');
@@ -153,7 +153,7 @@ function handleFile(file) {
       currentImage = img;
       resetCropState();
       showScreen('crop');
-      setTimeout(autoDetectChessboard, 300);
+      renderCanvas();
     };
     img.src = e.target.result;
   };
@@ -378,10 +378,22 @@ cropViewport.addEventListener('wheel', (e) => {
 
 /**
  * -------------------------------------------------------------
- * BUTTON CONTROLS (Zoom, Rotate 90°, Turn)
+ * BUTTON CONTROLS (Zoom, Rotate ±1° / 90°, Turn)
  * -------------------------------------------------------------
  */
-btnCropRotate90.addEventListener('click', () => {
+btnRotateCcw1?.addEventListener('click', () => {
+  rotation = (rotation - 1) % 360;
+  setRotatingActive();
+  renderCanvas();
+});
+
+btnRotateCw1?.addEventListener('click', () => {
+  rotation = (rotation + 1) % 360;
+  setRotatingActive();
+  renderCanvas();
+});
+
+btnCropRotate90?.addEventListener('click', () => {
   rotation = (rotation + 90) % 360;
   setRotatingActive();
   renderCanvas();
@@ -420,82 +432,9 @@ btnResultNew.addEventListener('click', () => showScreen('home'));
 
 /**
  * -------------------------------------------------------------
- * AUTO-DETECT CHESSBOARD
+ * QUICK-FIT GRID CONTROLS
  * -------------------------------------------------------------
  */
-function autoDetectChessboard() {
-  if (!currentImage) return;
-  try {
-    showLoading('Buscando tablero automáticamente...');
-    // Create an offscreen canvas to extract grayscale
-    const canvas = document.createElement('canvas');
-    canvas.width = currentImage.width;
-    canvas.height = currentImage.height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(currentImage, 0, 0);
-
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const grayData = new Float32Array(canvas.width * canvas.height);
-    for (let i = 0; i < grayData.length; i++) {
-      const idx = i * 4;
-      grayData[i] = 0.299 * imgData.data[idx] + 0.587 * imgData.data[idx + 1] + 0.114 * imgData.data[idx + 2];
-    }
-
-    const corners = findChessboardCorners({
-      data: grayData,
-      width: canvas.width,
-      height: canvas.height,
-    });
-
-    if (corners) {
-      applyCornersToViewport(corners.x0, corners.y0, corners.x1, corners.y1);
-    } else {
-      // Fallback: estimate board from image bounds if square or nearly square
-      guessSquareBoardBounds();
-    }
-  } catch (err) {
-    console.warn('Auto-detect skipped or failed:', err);
-    guessSquareBoardBounds();
-  } finally {
-    hideLoading();
-    renderCanvas();
-  }
-}
-
-function applyCornersToViewport(x0, y0, x1, y1) {
-  const bw = Math.abs(x1 - x0);
-  const bh = Math.abs(y1 - y0);
-  const bcx = (x0 + x1) / 2;
-  const bcy = (y0 + y1) / 2;
-
-  const rect = cropViewport.getBoundingClientRect();
-  const viewportPx = rect.width;
-  const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
-  const baseLeft = (viewportPx - currentImage.width * baseScale) / 2;
-  const baseTop = (viewportPx - currentImage.height * baseScale) / 2;
-
-  const boardSizeOnScreen = Math.max(bw, bh) * baseScale;
-  if (boardSizeOnScreen > 10) {
-    scale = Math.min(Math.max(viewportPx / boardSizeOnScreen, 0.5), 6.0);
-    const screenBcx = baseLeft + bcx * baseScale;
-    const screenBcy = baseTop + bcy * baseScale;
-    offsetX = (viewportPx / 2 - screenBcx) * scale;
-    offsetY = (viewportPx / 2 - screenBcy) * scale;
-    rotation = 0;
-
-    // Also match grid aspect if slightly non-square
-    const fittedW = bw * baseScale * scale;
-    const fittedH = bh * baseScale * scale;
-    const wPct = Math.min(100, (fittedW / viewportPx) * 100);
-    const hPct = Math.min(100, (fittedH / viewportPx) * 100);
-    gridLeft = (100 - wPct) / 2;
-    gridRight = 100 - gridLeft;
-    gridTop = (100 - hPct) / 2;
-    gridBottom = 100 - gridTop;
-    updateGridOverlayStyle();
-  }
-}
-
 function guessSquareBoardBounds() {
   if (!currentImage) return;
   const rect = cropViewport.getBoundingClientRect();
@@ -536,8 +475,7 @@ function cycleCornerOrQuickFit() {
   renderCanvas();
 }
 
-btnAutoDetect.addEventListener('click', autoDetectChessboard);
-btnCornerFit.addEventListener('click', cycleCornerOrQuickFit);
+btnCornerFit?.addEventListener('click', cycleCornerOrQuickFit);
 
 /**
  * -------------------------------------------------------------

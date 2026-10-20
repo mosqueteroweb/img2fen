@@ -431,10 +431,15 @@ body {
   gap: 4px;
 }
 
-.auto-btn {
-  background-color: #1e3a5f;
-  border-color: #2e598d;
-  color: #90caf9;
+.reset-btn {
+  background-color: #3b1e22;
+  border-color: #5c2c32;
+  color: #ff8a80;
+}
+
+.reset-btn:hover {
+  background-color: #4c252b;
+  border-color: #79373f;
 }
 
 .corner-btn {
