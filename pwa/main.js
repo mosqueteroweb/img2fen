@@ -1,4 +1,5 @@
 import * as ort from 'onnxruntime-web/wasm';
+import { Chess } from 'chess.js';
 import { registerSW } from 'virtual:pwa-register';
 
 // Configure pure WebAssembly paths using absolute document URL (not relative to bundled /assets/)
@@ -141,6 +142,11 @@ const btnShareFen = document.getElementById('btn-share-fen');
 const btnResultBack = document.getElementById('btn-result-back');
 const btnResultNew = document.getElementById('btn-result-new');
 const btnReopenCrop = document.getElementById('btn-reopen-crop');
+
+const positionValidatorCard = document.getElementById('position-validator-card');
+const validatorBadgeIcon = document.getElementById('validator-badge-icon');
+const validatorStatusTitle = document.getElementById('validator-status-title');
+const validatorDetails = document.getElementById('validator-details');
 
 const pieceModal = document.getElementById('piece-modal');
 const modalSquareLabel = document.getElementById('modal-square-label');
@@ -679,6 +685,7 @@ turnWhite.addEventListener('click', () => {
   activeColor = 'w';
   turnWhite.classList.add('active');
   turnBlack.classList.remove('active');
+  renderBoard();
   updateFenDisplay();
   saveToHistory(getFenString());
 });
@@ -687,6 +694,7 @@ turnBlack.addEventListener('click', () => {
   activeColor = 'b';
   turnBlack.classList.add('active');
   turnWhite.classList.remove('active');
+  renderBoard();
   updateFenDisplay();
   saveToHistory(getFenString());
 });
@@ -1147,13 +1155,20 @@ const PIECE_NAMES = {
 };
 
 function renderBoard() {
+  const { invalidSquares, inCheckSquare } = validateCurrentPosition();
+
   chessboard.innerHTML = '';
   for (let rank = 0; rank < 8; rank++) {
     for (let file = 0; file < 8; file++) {
       const idx = rank * 8 + file;
       const isLight = (rank + file) % 2 === 0;
       const squareEl = document.createElement('div');
-      squareEl.className = `square ${isLight ? 'light' : 'dark'}`;
+
+      let classes = `square ${isLight ? 'light' : 'dark'}`;
+      if (idx === inCheckSquare) classes += ' in-check';
+      if (invalidSquares && invalidSquares.has(idx)) classes += ' invalid-piece';
+
+      squareEl.className = classes;
       squareEl.dataset.index = idx;
 
       const piece = currentSquares[idx];
@@ -1168,6 +1183,197 @@ function renderBoard() {
       chessboard.appendChild(squareEl);
     }
   }
+}
+
+/**
+ * -------------------------------------------------------------
+ * CHESS POSITION RULES & FEN VALIDATOR (chess.js + semantic rules)
+ * -------------------------------------------------------------
+ */
+function validateCurrentPosition() {
+  const squares = currentSquares;
+  const errors = [];
+  const warnings = [];
+  const invalidSquares = new Set();
+  let inCheckSquare = null;
+
+  // 1. King counts and positions
+  const whiteKings = [];
+  const blackKings = [];
+  let whitePawns = 0, blackPawns = 0;
+  let whitePieces = 0, blackPieces = 0;
+  let whiteQueens = 0, blackQueens = 0;
+  let whiteRooks = 0, blackRooks = 0;
+  let whiteBishops = 0, blackBishops = 0;
+  let whiteKnights = 0, blackKnights = 0;
+
+  for (let i = 0; i < 64; i++) {
+    const p = squares[i];
+    if (!p) continue;
+    const row = Math.floor(i / 8);
+
+    if (p === 'K') { whiteKings.push(i); whitePieces++; }
+    else if (p === 'k') { blackKings.push(i); blackPieces++; }
+    else if (p === 'P') {
+      whitePawns++; whitePieces++;
+      if (row === 0 || row === 7) {
+        errors.push('Peón blanco en fila 1 u 8 (los peones no pueden estar en los extremos)');
+        invalidSquares.add(i);
+      }
+    }
+    else if (p === 'p') {
+      blackPawns++; blackPieces++;
+      if (row === 0 || row === 7) {
+        errors.push('Peón negro en fila 1 u 8 (los peones no pueden estar en los extremos)');
+        invalidSquares.add(i);
+      }
+    }
+    else if (p === 'Q') { whiteQueens++; whitePieces++; }
+    else if (p === 'q') { blackQueens++; blackPieces++; }
+    else if (p === 'R') { whiteRooks++; whitePieces++; }
+    else if (p === 'r') { blackRooks++; blackPieces++; }
+    else if (p === 'B') { whiteBishops++; whitePieces++; }
+    else if (p === 'b') { blackBishops++; blackPieces++; }
+    else if (p === 'N') { whiteKnights++; whitePieces++; }
+    else if (p === 'n') { blackKnights++; blackPieces++; }
+  }
+
+  // King rules
+  if (whiteKings.length === 0) {
+    errors.push('Falta el Rey Blanco (♔). Toca una casilla vacía para colocarlo.');
+  } else if (whiteKings.length > 1) {
+    errors.push(`Hay ${whiteKings.length} Reyes Blancos (solo debe haber 1)`);
+    whiteKings.forEach((idx) => invalidSquares.add(idx));
+  }
+
+  if (blackKings.length === 0) {
+    errors.push('Falta el Rey Negro (♚). Toca una casilla vacía para colocarlo.');
+  } else if (blackKings.length > 1) {
+    errors.push(`Hay ${blackKings.length} Reyes Negros (solo debe haber 1)`);
+    blackKings.forEach((idx) => invalidSquares.add(idx));
+  }
+
+  // Adjacent kings (kings touching)
+  if (whiteKings.length === 1 && blackKings.length === 1) {
+    const wr = Math.floor(whiteKings[0] / 8), wc = whiteKings[0] % 8;
+    const br = Math.floor(blackKings[0] / 8), bc = blackKings[0] % 8;
+    if (Math.abs(wr - br) <= 1 && Math.abs(wc - bc) <= 1) {
+      errors.push('Los dos reyes están juntos en casillas contiguas (distancia ilegal)');
+      invalidSquares.add(whiteKings[0]);
+      invalidSquares.add(blackKings[0]);
+    }
+  }
+
+  // Pawns limit
+  if (whitePawns > 8) errors.push(`Demasiados peones blancos: ${whitePawns} (máximo 8)`);
+  if (blackPawns > 8) errors.push(`Demasiados peones negros: ${blackPawns} (máximo 8)`);
+
+  // Total pieces limit
+  if (whitePieces > 16) errors.push(`Demasiadas piezas blancas: ${whitePieces} (máximo 16)`);
+  if (blackPieces > 16) errors.push(`Demasiadas piezas negras: ${blackPieces} (máximo 16)`);
+
+  // Extra promoted pieces vs available pawns
+  const extraWhite = Math.max(0, whiteQueens - 1) + Math.max(0, whiteRooks - 2) + Math.max(0, whiteBishops - 2) + Math.max(0, whiteKnights - 2);
+  if (extraWhite > (8 - whitePawns)) {
+    errors.push('Promociones imposibles: faltan peones blancos para tantas damas/torres/caballos');
+  }
+  const extraBlack = Math.max(0, blackQueens - 1) + Math.max(0, blackRooks - 2) + Math.max(0, blackBishops - 2) + Math.max(0, blackKnights - 2);
+  if (extraBlack > (8 - blackPawns)) {
+    errors.push('Promociones imposibles: faltan peones negros para tantas damas/torres/caballos');
+  }
+
+  let statusText = 'Posición Legal';
+  let statusType = 'valid';
+  let icon = '🟢';
+
+  // Rule verification with chess.js if structural checks pass
+  if (errors.length === 0) {
+    const currentFen = getFenString();
+    const oppColor = activeColor === 'w' ? 'b' : 'w';
+    let fenRows = [];
+    for (let r = 0; r < 8; r++) {
+      let empty = 0;
+      let rowStr = '';
+      for (let c = 0; c < 8; c++) {
+        const p = squares[r * 8 + c];
+        if (!p) empty++;
+        else {
+          if (empty > 0) { rowStr += empty; empty = 0; }
+          rowStr += p;
+        }
+      }
+      if (empty > 0) rowStr += empty;
+      fenRows.push(rowStr);
+    }
+    const oppFen = `${fenRows.join('/')} ${oppColor} - - 0 1`;
+
+    try {
+      const chessActive = new Chess(currentFen);
+      const chessOpp = new Chess(oppFen);
+
+      const activeInCheck = chessActive.inCheck();
+      const oppInCheck = chessOpp.inCheck();
+
+      if (activeInCheck && oppInCheck) {
+        errors.push('Ambos reyes están en jaque simultáneamente (posición físicamente imposible)');
+        invalidSquares.add(whiteKings[0]);
+        invalidSquares.add(blackKings[0]);
+      } else if (oppInCheck) {
+        errors.push(`El bando que no tiene el turno (${oppColor === 'w' ? 'Blancas' : 'Negras'}) está en jaque. 👉 Cambia el turno de juego a ${oppColor === 'w' ? 'Blancas' : 'Negras'}.`);
+        inCheckSquare = oppColor === 'w' ? whiteKings[0] : blackKings[0];
+      } else if (activeInCheck) {
+        inCheckSquare = activeColor === 'w' ? whiteKings[0] : blackKings[0];
+
+        if (chessActive.isCheckmate()) {
+          warnings.push(`¡Jaque Mate! El rey ${activeColor === 'w' ? 'blanco' : 'negro'} no tiene jugadas legales.`);
+          statusType = 'info';
+          icon = '🏆';
+          statusText = 'Jaque Mate';
+        } else {
+          warnings.push(`¡Jaque! Le toca jugar a ${activeColor === 'w' ? 'Blancas' : 'Negras'} y su rey está bajo ataque.`);
+          statusType = 'warning';
+          icon = '⚠️';
+          statusText = 'En Jaque';
+        }
+      } else if (chessActive.isStalemate()) {
+        warnings.push('¡Rey Ahogado! El bando con el turno no tiene movimientos legales pero no está en jaque (Tablas).');
+        statusType = 'info';
+        icon = '🤝';
+        statusText = 'Rey Ahogado (Tablas)';
+      }
+    } catch (err) {
+      console.warn('chess.js validation note:', err);
+    }
+  }
+
+  if (errors.length > 0) {
+    statusType = 'error';
+    icon = '🔴';
+    statusText = 'Posición Ilegal';
+  }
+
+  // Update UI Card
+  if (positionValidatorCard) {
+    positionValidatorCard.className = `validator-card ${statusType}`;
+    if (validatorBadgeIcon) validatorBadgeIcon.textContent = icon;
+    if (validatorStatusTitle) validatorStatusTitle.textContent = statusText;
+
+    if (validatorDetails) {
+      if (errors.length > 0 || warnings.length > 0) {
+        validatorDetails.classList.remove('hidden');
+        let html = '<ul>';
+        errors.forEach((e) => { html += `<li>${e}</li>`; });
+        warnings.forEach((w) => { html += `<li>${w}</li>`; });
+        html += '</ul>';
+        validatorDetails.innerHTML = html;
+      } else {
+        validatorDetails.classList.add('hidden');
+        validatorDetails.innerHTML = '';
+      }
+    }
+  }
+
+  return { isValid: errors.length === 0, invalidSquares, inCheckSquare };
 }
 
 function openPiecePicker(index) {
@@ -1234,6 +1440,7 @@ function getFenString() {
 
 function updateFenDisplay() {
   fenText.textContent = getFenString();
+  validateCurrentPosition();
 }
 
 btnCopyFen.addEventListener('click', async () => {
@@ -1556,7 +1763,7 @@ async function handleCheckForUpdates() {
         window.location.reload();
       }
     } else {
-      showToast('✅ Ya tienes la última versión (v2.3.1)', 2500);
+      showToast('✅ Ya tienes la última versión (v2.4.0)', 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);

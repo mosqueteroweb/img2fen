@@ -1,6 +1,6 @@
 {
   "name": "pwa",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -13,6 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "@scoriiu/fenshot": "^0.1.5",
+    "chess.js": "^1.4.0",
     "onnxruntime-web": "^1.21.0"
   },
   "devDependencies": {
