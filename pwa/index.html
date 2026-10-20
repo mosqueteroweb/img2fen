@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Img2FEN ♟️ - Diagramas a FEN de Ajedrez</title>
+  <meta name="description" content="Convierte diagramas y fotos de ajedrez a notación FEN al instante. 100% offline, local y privado.">
+  <meta name="theme-color" content="#121212">
+  <link rel="icon" type="image/png" href="icons/icon-512.png">
+  <link rel="apple-touch-icon" href="icons/icon-512.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <img src="icons/icon-512.png" alt="Img2FEN" class="app-logo">
+        <div class="app-title-group">
+          <h1 class="app-title">Img2FEN</h1>
+          <span class="app-version">v1.1.0 PWA</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <img src="icons/creator-logo.png" alt="Creador Mosqueteroweb" class="creator-logo" title="Creado por Mosqueteroweb">
+      </div>
+    </header>
+
+    <!-- Main Views -->
+    <main class="app-main">
+      <!-- 1. HOME SCREEN -->
+      <section id="screen-home" class="screen active">
+        <div class="hero-card">
+          <div class="hero-icon">♟️</div>
+          <h2>Escanear Diagrama</h2>
+          <p>Toma una foto de un libro, revista o pantalla para leer la posición FEN al instante sin internet.</p>
+        </div>
+
+        <div class="actions-grid">
+          <label class="action-btn primary-btn">
+            <span class="icon">📷</span>
+            <span class="text">Tomar Foto</span>
+            <input type="file" id="input-camera" accept="image/*" capture="environment" class="hidden-input">
+          </label>
+
+          <label class="action-btn secondary-btn">
+            <span class="icon">🖼️</span>
+            <span class="text">Abrir Galería</span>
+            <input type="file" id="input-gallery" accept="image/*" class="hidden-input">
+          </label>
+        </div>
+
+        <!-- History Card -->
+        <div class="history-section">
+          <h3>Posiciones Recientes</h3>
+          <div id="history-list" class="history-list">
+            <p class="empty-state">No hay escaneos recientes todavía.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. CROP / ADJUST SCREEN -->
+      <section id="screen-crop" class="screen">
+        <div class="crop-header">
+          <button id="btn-crop-back" class="icon-btn" title="Atrás">⬅️</button>
+          <h2>Ajustar Diagrama</h2>
+          <button id="btn-crop-rotate-90" class="icon-btn" title="Rotar 90°">🔄</button>
+        </div>
+
+        <p class="crop-instruction">👉 Mueve y pellizca con dos dedos para hacer zoom y rotar el tablero.</p>
+
+        <!-- Viewport Container with 8x8 Grid -->
+        <div class="viewport-wrapper">
+          <div id="crop-viewport" class="crop-viewport">
+            <canvas id="crop-canvas"></canvas>
+            <!-- 8x8 Dual-Stroke Grid Overlay -->
+            <div class="grid-overlay">
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+            </div>
+            <!-- Ephemeral Rotation Angle Badge -->
+            <div id="rotation-badge" class="rotation-badge hidden">↺ 0°</div>
+          </div>
+        </div>
+
+        <!-- Crop Controls -->
+        <div class="crop-controls">
+          <div class="zoom-controls">
+            <span class="label">Zoom:</span>
+            <button id="btn-zoom-in" class="ctrl-btn">+</button>
+            <button id="btn-zoom-out" class="ctrl-btn">-</button>
+            <button id="btn-zoom-reset" class="ctrl-btn" title="Restablecer">↺</button>
+          </div>
+          <button id="btn-auto-detect" class="ctrl-btn auto-btn" title="Buscar tablero automáticamente">🪄</button>
+        </div>
+
+        <!-- Turn Selector -->
+        <div class="turn-selector-card">
+          <span class="turn-label">¿A quién le toca jugar?</span>
+          <div class="turn-toggle">
+            <button id="turn-white" class="turn-btn active">⚪ Juegan Blancas</button>
+            <button id="turn-black" class="turn-btn">⚫ Juegan Negras</button>
+          </div>
+        </div>
+
+        <!-- Process Button -->
+        <button id="btn-process-scan" class="action-btn process-btn">
+          <span>Reconocer Posición ♟️</span>
+        </button>
+      </section>
+
+      <!-- 3. RESULT SCREEN -->
+      <section id="screen-result" class="screen">
+        <div class="result-header">
+          <button id="btn-result-back" class="icon-btn" title="Atrás">⬅️</button>
+          <h2>Posición Reconocida</h2>
+          <button id="btn-result-new" class="icon-btn" title="Nuevo Escaneo">➕</button>
+        </div>
+
+        <!-- Interactive Chessboard -->
+        <div class="board-wrapper">
+          <div id="chessboard" class="chessboard">
+            <!-- 64 Squares will be populated by JS -->
+          </div>
+        </div>
+
+        <p class="board-hint">💡 Toca cualquier casilla para corregir o cambiar una pieza.</p>
+
+        <!-- FEN String Output -->
+        <div class="fen-card">
+          <label>Notación FEN:</label>
+          <div class="fen-box">
+            <code id="fen-text">rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1</code>
+          </div>
+          <button id="btn-copy-fen" class="action-btn small-btn">📋 Copiar FEN</button>
+        </div>
+
+        <!-- Share & Analysis Actions -->
+        <div class="result-actions">
+          <button id="btn-open-chesscom" class="action-btn chesscom-btn">
+            <span>Abrir en Chess.com ♟️</span>
+          </button>
+          <button id="btn-share-fen" class="action-btn share-btn">
+            <span>Compartir FEN 📲</span>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Piece Picker Modal Dialog -->
+    <div id="piece-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <h3>Seleccionar Pieza</h3>
+        <p id="modal-square-label">Casilla: e4</p>
+        <div class="modal-pieces-grid">
+          <button class="piece-btn" data-piece="K"><img src="pieces/wK.svg" alt="Rey Blanco"></button>
+          <button class="piece-btn" data-piece="Q"><img src="pieces/wQ.svg" alt="Dama Blanca"></button>
+          <button class="piece-btn" data-piece="R"><img src="pieces/wR.svg" alt="Torre Blanca"></button>
+          <button class="piece-btn" data-piece="B"><img src="pieces/wB.svg" alt="Alfil Blanco"></button>
+          <button class="piece-btn" data-piece="N"><img src="pieces/wN.svg" alt="Caballo Blanco"></button>
+          <button class="piece-btn" data-piece="P"><img src="pieces/wP.svg" alt="Peón Blanco"></button>
+
+          <button class="piece-btn" data-piece="k"><img src="pieces/bK.svg" alt="Rey Negro"></button>
+          <button class="piece-btn" data-piece="q"><img src="pieces/bQ.svg" alt="Dama Negra"></button>
+          <button class="piece-btn" data-piece="r"><img src="pieces/bR.svg" alt="Torre Negra"></button>
+          <button class="piece-btn" data-piece="b"><img src="pieces/bB.svg" alt="Alfil Negro"></button>
+          <button class="piece-btn" data-piece="n"><img src="pieces/bN.svg" alt="Caballo Negro"></button>
+          <button class="piece-btn" data-piece="p"><img src="pieces/bP.svg" alt="Peón Negro"></button>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-clear-square" class="modal-btn clear-btn">Casilla Vacía</button>
+          <button id="btn-cancel-modal" class="modal-btn cancel-btn">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading Spinner Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+      <div class="spinner"></div>
+      <p id="loading-text">Reconociendo piezas offline...</p>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
