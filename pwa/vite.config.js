@@ -31,27 +31,46 @@ export default defineConfig({
         start_url: './',
         icons: [
           {
+            src: 'icons/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: 'icons/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
             src: 'icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            src: 'icons/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ],
         share_target: {
-          action: './',
+          action: 'share-target',
           method: 'POST',
           enctype: 'multipart/form-data',
           params: {
             files: [
               {
                 name: 'image',
-                accept: ['image/*']
+                accept: ['image/*', '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif']
               }
             ]
           }
         }
       },
       workbox: {
+        importScripts: ['sw-share-target.js'],
         globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,wasm,onnx}'],
         maximumFileSizeToCacheInBytes: 35 * 1024 * 1024, // Allow up to 35MB for WASM and ONNX
         runtimeCaching: [

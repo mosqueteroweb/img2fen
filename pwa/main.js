@@ -1763,7 +1763,7 @@ async function handleCheckForUpdates() {
         window.location.reload();
       }
     } else {
-      showToast('✅ Ya tienes la última versión (v2.4.0)', 2500);
+      showToast('✅ Ya tienes la última versión (v2.5.0)', 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);
@@ -1819,5 +1819,38 @@ window.addEventListener('appinstalled', () => {
   }
 });
 
+/**
+ * -------------------------------------------------------------
+ * WEB SHARE TARGET HANDLER (Incoming images shared from other apps)
+ * -------------------------------------------------------------
+ */
+async function checkSharedImage() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('shared') === '1') {
+    try {
+      const cache = await caches.open('img2fen-shared-data');
+      const response = await cache.match('shared-image');
+      if (response) {
+        const blob = await response.blob();
+        const fileName = response.headers.get('x-file-name') || 'shared-diagram.png';
+        const file = new File([blob], fileName, { type: blob.type || 'image/png' });
+        await cache.delete('shared-image');
+
+        // Clean up URL without reloading
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+
+        showToast('📷 Imagen compartida recibida. Analizando...', 2500);
+        handleFile(file);
+        return;
+      }
+    } catch (err) {
+      console.warn('[PWA] Error recuperando imagen compartida:', err);
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
+
 // Initial history load
 renderHistory();
+checkSharedImage();
