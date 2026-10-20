@@ -20,7 +20,7 @@
         <img src="icons/icon-512.png" alt="Img2FEN" class="app-logo">
         <div class="app-title-group">
           <h1 class="app-title">Img2FEN</h1>
-          <span class="app-version" id="app-version-badge" title="Toca para buscar actualizaciones">v1.4.0</span>
+          <span class="app-version" id="app-version-badge" title="Toca para buscar actualizaciones">v1.5.0</span>
           <button id="btn-check-update" class="update-btn" title="Comprobar si hay una nueva versión">
             <span class="update-icon">🔄</span>
             <span class="update-text">Actualizar</span>
@@ -83,70 +83,76 @@
 
         <p class="crop-instruction">👉 Arrastra los 4 puntos amarillos de las esquinas de la cuadrícula o mueve la imagen.</p>
 
-        <!-- Viewport Container with Adjustable 8x8 Grid -->
-        <div class="viewport-wrapper">
-          <div id="crop-viewport" class="crop-viewport">
-            <canvas id="crop-canvas"></canvas>
-            <!-- 8x8 Dual-Stroke Adjustable Grid Overlay -->
-            <div id="grid-overlay" class="grid-overlay">
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
-              <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+        <div class="crop-workspace-layout">
+          <div class="crop-main-col">
+            <!-- Viewport Container with Adjustable 8x8 Grid -->
+            <div class="viewport-wrapper">
+              <div id="crop-viewport" class="crop-viewport">
+                <canvas id="crop-canvas"></canvas>
+                <!-- 8x8 Dual-Stroke Adjustable Grid Overlay -->
+                <div id="grid-overlay" class="grid-overlay">
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                  <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
 
-              <!-- Corner & Edge Resize Handles -->
-              <div class="grid-handle handle-tl" data-handle="tl" title="Arrastrar esquina superior izquierda (A8)"></div>
-              <div class="grid-handle handle-tr" data-handle="tr" title="Arrastrar esquina superior derecha (H8)"></div>
-              <div class="grid-handle handle-bl" data-handle="bl" title="Arrastrar esquina inferior izquierda (A1)"></div>
-              <div class="grid-handle handle-br" data-handle="br" title="Arrastrar esquina inferior derecha (H1)"></div>
+                  <!-- Corner & Edge Resize Handles -->
+                  <div class="grid-handle handle-tl" data-handle="tl" title="Arrastrar esquina superior izquierda (A8)"></div>
+                  <div class="grid-handle handle-tr" data-handle="tr" title="Arrastrar esquina superior derecha (H8)"></div>
+                  <div class="grid-handle handle-bl" data-handle="bl" title="Arrastrar esquina inferior izquierda (A1)"></div>
+                  <div class="grid-handle handle-br" data-handle="br" title="Arrastrar esquina inferior derecha (H1)"></div>
+                </div>
+                <!-- Ephemeral Rotation Angle Badge -->
+                <div id="rotation-badge" class="rotation-badge hidden">↺ 0°</div>
+              </div>
             </div>
-            <!-- Ephemeral Rotation Angle Badge -->
-            <div id="rotation-badge" class="rotation-badge hidden">↺ 0°</div>
+          </div>
+
+          <div class="crop-side-col">
+            <!-- Crop Controls -->
+            <div class="crop-controls">
+              <div class="zoom-controls">
+                <span class="label">Zoom:</span>
+                <button id="btn-zoom-in" class="ctrl-btn" title="Aumentar zoom">+</button>
+                <button id="btn-zoom-out" class="ctrl-btn" title="Reducir zoom">-</button>
+                <button id="btn-zoom-reset" class="ctrl-btn reset-btn" title="Restablecer vista a cero">❌</button>
+              </div>
+              <div class="quick-fit-controls">
+                <span class="label">Girar:</span>
+                <button id="btn-rotate-ccw-1" class="ctrl-btn" title="Girar 1° a la izquierda">↺ 1°</button>
+                <button id="btn-rotate-cw-1" class="ctrl-btn" title="Girar 1° a la derecha">↻ 1°</button>
+                <button id="btn-crop-rotate-90" class="ctrl-btn" title="Girar 90°">🔄 90°</button>
+                <button id="btn-corner-fit" class="ctrl-btn corner-btn" title="Adaptar cuadrícula al tamaño de la foto">📐 Esquinas</button>
+              </div>
+            </div>
+
+            <!-- Turn Selector -->
+            <div class="turn-selector-card">
+              <span class="turn-label">¿A quién le toca jugar?</span>
+              <div class="turn-toggle">
+                <button id="turn-white" class="turn-btn active">⚪ Juegan Blancas</button>
+                <button id="turn-black" class="turn-btn">⚫ Juegan Negras</button>
+              </div>
+            </div>
+
+            <!-- Process Button -->
+            <button id="btn-process-scan" class="action-btn process-btn">
+              <span>Reconocer Posición ♟️</span>
+            </button>
           </div>
         </div>
-
-        <!-- Crop Controls -->
-        <div class="crop-controls">
-          <div class="zoom-controls">
-            <span class="label">Zoom:</span>
-            <button id="btn-zoom-in" class="ctrl-btn" title="Aumentar zoom">+</button>
-            <button id="btn-zoom-out" class="ctrl-btn" title="Reducir zoom">-</button>
-            <button id="btn-zoom-reset" class="ctrl-btn reset-btn" title="Restablecer vista a cero">❌</button>
-          </div>
-          <div class="quick-fit-controls">
-            <span class="label">Girar:</span>
-            <button id="btn-rotate-ccw-1" class="ctrl-btn" title="Girar 1° a la izquierda">↺ 1°</button>
-            <button id="btn-rotate-cw-1" class="ctrl-btn" title="Girar 1° a la derecha">↻ 1°</button>
-            <button id="btn-crop-rotate-90" class="ctrl-btn" title="Girar 90°">🔄 90°</button>
-            <button id="btn-corner-fit" class="ctrl-btn corner-btn" title="Adaptar cuadrícula al tamaño de la foto">📐 Esquinas</button>
-          </div>
-        </div>
-
-        <!-- Turn Selector -->
-        <div class="turn-selector-card">
-          <span class="turn-label">¿A quién le toca jugar?</span>
-          <div class="turn-toggle">
-            <button id="turn-white" class="turn-btn active">⚪ Juegan Blancas</button>
-            <button id="turn-black" class="turn-btn">⚫ Juegan Negras</button>
-          </div>
-        </div>
-
-        <!-- Process Button -->
-        <button id="btn-process-scan" class="action-btn process-btn">
-          <span>Reconocer Posición ♟️</span>
-        </button>
       </section>
 
       <!-- 3. RESULT SCREEN -->
@@ -157,32 +163,37 @@
           <button id="btn-result-new" class="icon-btn" title="Nuevo Escaneo">➕</button>
         </div>
 
-        <!-- Interactive Chessboard -->
-        <div class="board-wrapper">
-          <div id="chessboard" class="chessboard">
-            <!-- 64 Squares will be populated by JS -->
+        <div class="result-workspace-layout">
+          <div class="result-main-col">
+            <!-- Interactive Chessboard -->
+            <div class="board-wrapper">
+              <div id="chessboard" class="chessboard">
+                <!-- 64 Squares will be populated by JS -->
+              </div>
+            </div>
+            <p class="board-hint">💡 Toca cualquier casilla para corregir o cambiar una pieza.</p>
           </div>
-        </div>
 
-        <p class="board-hint">💡 Toca cualquier casilla para corregir o cambiar una pieza.</p>
+          <div class="result-side-col">
+            <!-- FEN String Output -->
+            <div class="fen-card">
+              <label>Notación FEN:</label>
+              <div class="fen-box">
+                <code id="fen-text">rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1</code>
+              </div>
+              <button id="btn-copy-fen" class="action-btn small-btn">📋 Copiar FEN</button>
+            </div>
 
-        <!-- FEN String Output -->
-        <div class="fen-card">
-          <label>Notación FEN:</label>
-          <div class="fen-box">
-            <code id="fen-text">rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1</code>
+            <!-- Share & Analysis Actions -->
+            <div class="result-actions">
+              <button id="btn-open-chesscom" class="action-btn chesscom-btn">
+                <span>Abrir en Chess.com ♟️</span>
+              </button>
+              <button id="btn-share-fen" class="action-btn share-btn">
+                <span>Compartir FEN 📲</span>
+              </button>
+            </div>
           </div>
-          <button id="btn-copy-fen" class="action-btn small-btn">📋 Copiar FEN</button>
-        </div>
-
-        <!-- Share & Analysis Actions -->
-        <div class="result-actions">
-          <button id="btn-open-chesscom" class="action-btn chesscom-btn">
-            <span>Abrir en Chess.com ♟️</span>
-          </button>
-          <button id="btn-share-fen" class="action-btn share-btn">
-            <span>Compartir FEN 📲</span>
-          </button>
         </div>
       </section>
     </main>

@@ -127,7 +127,7 @@ function showScreen(name) {
     screens[key].classList.toggle('active', key === name);
   });
   if (name === 'crop') {
-    renderCanvas();
+    requestAnimationFrame(renderCanvas);
   }
 }
 
@@ -1007,7 +1007,7 @@ async function handleCheckForUpdates() {
         window.location.reload();
       }
     } else {
-      showToast('✅ Ya tienes la última versión (v1.4.0)', 2500);
+      showToast('✅ Ya tienes la última versión (v1.5.0)', 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);
