@@ -1,4 +1,5 @@
 import * as ort from 'onnxruntime-web/wasm';
+import { registerSW } from 'virtual:pwa-register';
 
 // Configure pure WebAssembly paths using absolute document URL (not relative to bundled /assets/)
 const ROOT_URL = new URL('./', window.location.href).href;
@@ -892,6 +893,134 @@ window.addEventListener('resize', () => {
     renderCanvas();
   }
 });
+
+/**
+ * -------------------------------------------------------------
+ * TOAST NOTIFICATIONS
+ * -------------------------------------------------------------
+ */
+let toastTimer = null;
+function showToast(message, duration = 3000) {
+  const toast = document.getElementById('app-toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.add('hidden');
+  }, duration);
+}
+
+/**
+ * -------------------------------------------------------------
+ * PWA SERVICE WORKER & AUTO-UPDATE ENGINE
+ * -------------------------------------------------------------
+ */
+let updateServiceWorkerFn = null;
+let swRegistration = null;
+
+updateServiceWorkerFn = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    console.log('[PWA] Nueva versión disponible. Aplicando actualización...');
+    showToast('⚡ Nueva versión encontrada. Actualizando...', 2500);
+    setTimeout(() => {
+      if (updateServiceWorkerFn) {
+        updateServiceWorkerFn(true);
+      } else {
+        window.location.reload();
+      }
+    }, 600);
+  },
+  onOfflineReady() {
+    console.log('[PWA] Aplicación lista para funcionar offline.');
+  },
+  onRegisteredSW(swUrl, registration) {
+    swRegistration = registration;
+    console.log('[PWA] Service Worker registrado correctamente.');
+    if (registration) {
+      // 1. Chequeo automático al abrir la aplicación (tras 1 segundo de cortesía)
+      setTimeout(() => {
+        try {
+          registration.update().catch(() => {});
+        } catch (_) {}
+      }, 1000);
+
+      // 2. Chequeo automático cuando la app vuelve a primer plano
+      window.addEventListener('focus', () => {
+        try {
+          registration.update().catch(() => {});
+        } catch (_) {}
+      });
+
+      // 3. Chequeo recurrente cada 15 minutos mientras esté abierta
+      setInterval(() => {
+        try {
+          registration.update().catch(() => {});
+        } catch (_) {}
+      }, 15 * 60 * 1000);
+    }
+  },
+  onRegisterError(error) {
+    console.warn('[PWA] Error registrando el Service Worker:', error);
+  }
+});
+
+// Listener de seguridad ante cambio de controlador (skipWaiting aplicado)
+let refreshing = false;
+navigator.serviceWorker?.addEventListener('controllerchange', () => {
+  if (!refreshing) {
+    refreshing = true;
+    window.location.reload();
+  }
+});
+
+// Botón manual de comprobación y clic en el badge de versión
+const btnCheckUpdate = document.getElementById('btn-check-update');
+const appVersionBadge = document.getElementById('app-version-badge');
+
+async function handleCheckForUpdates() {
+  if (btnCheckUpdate) {
+    btnCheckUpdate.classList.add('checking');
+  }
+  showToast('🔍 Buscando actualizaciones...');
+
+  try {
+    if (!('serviceWorker' in navigator)) {
+      showToast('Este navegador no soporta Service Workers.');
+      return;
+    }
+
+    const reg = swRegistration || (await navigator.serviceWorker.getRegistration());
+    if (!reg) {
+      showToast('Iniciando Service Worker, prueba en unos segundos...');
+      return;
+    }
+
+    await reg.update();
+
+    if (reg.waiting || reg.installing) {
+      showToast('⚡ ¡Nueva versión encontrada! Actualizando...', 2500);
+      if (updateServiceWorkerFn) {
+        updateServiceWorkerFn(true);
+      } else {
+        window.location.reload();
+      }
+    } else {
+      showToast('✅ Ya tienes la última versión (v1.4.0)', 2500);
+    }
+  } catch (err) {
+    console.warn('[PWA] Error comprobando actualización:', err);
+    showToast('Sin conexión o no se pudo comprobar.', 2500);
+  } finally {
+    if (btnCheckUpdate) {
+      btnCheckUpdate.classList.remove('checking');
+    }
+  }
+}
+
+btnCheckUpdate?.addEventListener('click', handleCheckForUpdates);
+appVersionBadge?.addEventListener('click', handleCheckForUpdates);
 
 /**
  * -------------------------------------------------------------

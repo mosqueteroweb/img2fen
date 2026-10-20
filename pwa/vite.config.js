@@ -12,7 +12,7 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      injectRegister: null,
       includeAssets: [
         'icons/*.png',
         'pieces/*.svg',
