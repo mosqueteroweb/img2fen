@@ -1,11 +1,13 @@
-import * as ort from 'onnxruntime-web';
+import * as ort from 'onnxruntime-web/wasm';
 import { findChessboardCorners } from '@scoriiu/fenshot';
 
-// Force pure WASM backend on CPU with SIMD
-ort.env.wasm.wasmPaths = './wasm/';
+// Configure pure WebAssembly paths
+const BASE_PATH = import.meta.env.BASE_URL || './';
+ort.env.wasm.wasmPaths = `${BASE_PATH}wasm/`;
 ort.env.wasm.numThreads = 1;
+ort.env.wasm.proxy = false;
 
-const MODEL_PATH = './model/chess-tiles-v2.onnx';
+const MODEL_PATH = `${BASE_PATH}model/chess-tiles-v2.onnx`;
 const LABELS = '1KQRBNPkqrbnp';
 const TILE_PX = 32;
 
