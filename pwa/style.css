@@ -296,16 +296,16 @@ body {
 /* 8x8 Grid Overlay */
 .grid-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 0%;
+  left: 0%;
   width: 100%;
   height: 100%;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   grid-template-rows: repeat(8, 1fr);
   pointer-events: none;
-  border: 2px solid var(--accent-color);
-  box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.8);
+  border: 2.5px solid var(--accent-color);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55), inset 0 0 0 1.5px rgba(0,0,0,0.85);
 }
 
 .grid-cell {
@@ -320,6 +320,49 @@ body {
 
 .grid-cell:nth-child(n+57) {
   border-bottom: none;
+}
+
+/* Corner Resize Handles for Grid */
+.grid-handle {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  background-color: var(--accent-color);
+  border: 2.5px solid #000;
+  border-radius: 50%;
+  pointer-events: auto;
+  z-index: 20;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+  transition: transform 0.1s;
+}
+
+.grid-handle:hover, .grid-handle:active {
+  transform: scale(1.25);
+  background-color: #ffffff;
+}
+
+.handle-tl {
+  top: -12px;
+  left: -12px;
+  cursor: nwse-resize;
+}
+
+.handle-tr {
+  top: -12px;
+  right: -12px;
+  cursor: nesw-resize;
+}
+
+.handle-bl {
+  bottom: -12px;
+  left: -12px;
+  cursor: nesw-resize;
+}
+
+.handle-br {
+  bottom: -12px;
+  right: -12px;
+  cursor: nwse-resize;
 }
 
 /* Ephemeral Rotation Badge */

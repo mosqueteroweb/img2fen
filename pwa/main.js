@@ -51,6 +51,13 @@ let rotation = 0.0; // in degrees
 let isRotating = false;
 let rotationDismissTimer = null;
 
+// Adjustable Grid Rect (in percentages 0..100 of viewport)
+let gridLeft = 0;
+let gridTop = 0;
+let gridRight = 100;
+let gridBottom = 100;
+let activeHandle = null;
+
 // Touch tracking
 let touchStartDist = 0;
 let touchStartAngle = 0;
@@ -90,6 +97,7 @@ const btnProcessScan = document.getElementById('btn-process-scan');
 const cropViewport = document.getElementById('crop-viewport');
 const cropCanvas = document.getElementById('crop-canvas');
 const cropCtx = cropCanvas.getContext('2d');
+const gridOverlay = document.getElementById('grid-overlay');
 const rotationBadge = document.getElementById('rotation-badge');
 
 const chessboard = document.getElementById('chessboard');
@@ -158,7 +166,20 @@ function resetCropState() {
   offsetY = 0.0;
   rotation = 0.0;
   isRotating = false;
+  gridLeft = 0;
+  gridTop = 0;
+  gridRight = 100;
+  gridBottom = 100;
+  updateGridOverlayStyle();
   updateRotationBadge();
+}
+
+function updateGridOverlayStyle() {
+  if (!gridOverlay) return;
+  gridOverlay.style.left = `${gridLeft}%`;
+  gridOverlay.style.top = `${gridTop}%`;
+  gridOverlay.style.width = `${gridRight - gridLeft}%`;
+  gridOverlay.style.height = `${gridBottom - gridTop}%`;
 }
 
 function updateRotationBadge() {
@@ -225,6 +246,13 @@ function getAngle(t1, t2) {
 }
 
 cropViewport.addEventListener('touchstart', (e) => {
+  const handleEl = e.target.closest('.grid-handle');
+  if (handleEl) {
+    activeHandle = handleEl.dataset.handle;
+    e.stopPropagation();
+    return;
+  }
+
   touchCount = e.touches.length;
   if (touchCount === 1) {
     isTouching = true;
@@ -243,8 +271,35 @@ cropViewport.addEventListener('touchstart', (e) => {
   }
 }, { passive: false });
 
+function updateGridFromPointer(clientX, clientY) {
+  if (!activeHandle) return;
+  const rect = cropViewport.getBoundingClientRect();
+  const pctX = Math.min(Math.max(((clientX - rect.left) / rect.width) * 100, 0), 100);
+  const pctY = Math.min(Math.max(((clientY - rect.top) / rect.height) * 100, 0), 100);
+  const minSpan = 20; // minimum 20% size
+
+  if (activeHandle === 'tl') {
+    gridLeft = Math.min(pctX, gridRight - minSpan);
+    gridTop = Math.min(pctY, gridBottom - minSpan);
+  } else if (activeHandle === 'tr') {
+    gridRight = Math.max(pctX, gridLeft + minSpan);
+    gridTop = Math.min(pctY, gridBottom - minSpan);
+  } else if (activeHandle === 'bl') {
+    gridLeft = Math.min(pctX, gridRight - minSpan);
+    gridBottom = Math.max(pctY, gridTop + minSpan);
+  } else if (activeHandle === 'br') {
+    gridRight = Math.max(pctX, gridLeft + minSpan);
+    gridBottom = Math.max(pctY, gridTop + minSpan);
+  }
+  updateGridOverlayStyle();
+}
+
 cropViewport.addEventListener('touchmove', (e) => {
   e.preventDefault();
+  if (activeHandle && e.touches.length === 1) {
+    updateGridFromPointer(e.touches[0].clientX, e.touches[0].clientY);
+    return;
+  }
   if (!isTouching) return;
 
   if (e.touches.length === 1 && touchCount === 1) {
@@ -277,6 +332,7 @@ cropViewport.addEventListener('touchend', (e) => {
   touchCount = e.touches.length;
   if (touchCount === 0) {
     isTouching = false;
+    activeHandle = null;
   }
 });
 
@@ -286,12 +342,22 @@ let mouseStartX = 0;
 let mouseStartY = 0;
 
 cropViewport.addEventListener('mousedown', (e) => {
+  const handleEl = e.target.closest('.grid-handle');
+  if (handleEl) {
+    activeHandle = handleEl.dataset.handle;
+    e.stopPropagation();
+    return;
+  }
   isMouseDown = true;
   mouseStartX = e.clientX - offsetX;
   mouseStartY = e.clientY - offsetY;
 });
 
 window.addEventListener('mousemove', (e) => {
+  if (activeHandle) {
+    updateGridFromPointer(e.clientX, e.clientY);
+    return;
+  }
   if (!isMouseDown) return;
   offsetX = e.clientX - mouseStartX;
   offsetY = e.clientY - mouseStartY;
@@ -300,6 +366,7 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', () => {
   isMouseDown = false;
+  activeHandle = null;
 });
 
 cropViewport.addEventListener('wheel', (e) => {
@@ -415,17 +482,36 @@ function applyCornersToViewport(x0, y0, x1, y1) {
     offsetX = (viewportPx / 2 - screenBcx) * scale;
     offsetY = (viewportPx / 2 - screenBcy) * scale;
     rotation = 0;
+
+    // Also match grid aspect if slightly non-square
+    const fittedW = bw * baseScale * scale;
+    const fittedH = bh * baseScale * scale;
+    const wPct = Math.min(100, (fittedW / viewportPx) * 100);
+    const hPct = Math.min(100, (fittedH / viewportPx) * 100);
+    gridLeft = (100 - wPct) / 2;
+    gridRight = 100 - gridLeft;
+    gridTop = (100 - hPct) / 2;
+    gridBottom = 100 - gridTop;
+    updateGridOverlayStyle();
   }
 }
 
 function guessSquareBoardBounds() {
   if (!currentImage) return;
-  // If the image itself is approximately square, fit it directly
-  const minDim = Math.min(currentImage.width, currentImage.height);
-  const maxDim = Math.max(currentImage.width, currentImage.height);
-  if (minDim / maxDim > 0.85) {
-    resetCropState();
-  }
+  const rect = cropViewport.getBoundingClientRect();
+  const viewportPx = rect.width;
+  const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
+  const drawW = currentImage.width * baseScale;
+  const drawH = currentImage.height * baseScale;
+
+  // Snap adjustable grid directly onto the rendered image bounds
+  const wPct = (drawW / viewportPx) * 100;
+  const hPct = (drawH / viewportPx) * 100;
+  gridLeft = (100 - wPct) / 2;
+  gridRight = 100 - gridLeft;
+  gridTop = (100 - hPct) / 2;
+  gridBottom = 100 - gridTop;
+  updateGridOverlayStyle();
 }
 
 // Corner click / auto-fit helper
@@ -433,30 +519,18 @@ let cornerStep = 0;
 function cycleCornerOrQuickFit() {
   if (!currentImage) return;
 
-  const rect = cropViewport.getBoundingClientRect();
-  const viewportPx = rect.width;
-  const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
-  const minDim = Math.min(currentImage.width, currentImage.height);
+  cornerStep = (cornerStep + 1) % 2;
 
-  // Cycle through sensible desktop alignments:
-  // 0: Centered square crop
-  // 1: Fit 100% width
-  // 2: Fit 100% height
-  cornerStep = (cornerStep + 1) % 3;
-
-  if (cornerStep === 0) {
-    // Exact square board fit
-    scale = (viewportPx / (minDim * baseScale));
-    offsetX = 0;
-    offsetY = 0;
-    rotation = 0;
-  } else if (cornerStep === 1) {
+  if (cornerStep === 1) {
+    // Fit adjustable grid to exact image aspect ratio
     scale = 1.0;
     offsetX = 0;
     offsetY = 0;
     rotation = 0;
+    guessSquareBoardBounds();
   } else {
-    autoDetectChessboard();
+    // Full 100% square grid
+    resetCropState();
   }
 
   renderCanvas();
@@ -479,29 +553,24 @@ btnProcessScan.addEventListener('click', async () => {
 
     showLoading('Reconociendo piezas offline...');
 
-    // 1. Render viewport to 256x256 square canvas
+    // 1. Render sub-region inside adjustable grid to 256x256 square canvas
     const boardCanvas = document.createElement('canvas');
     boardCanvas.width = 256;
     boardCanvas.height = 256;
     const bCtx = boardCanvas.getContext('2d');
 
     const rect = cropViewport.getBoundingClientRect();
-    const viewportPx = rect.width;
+    const gLeftPx = (gridLeft / 100) * rect.width;
+    const gTopPx = (gridTop / 100) * rect.height;
+    const gWidthPx = ((gridRight - gridLeft) / 100) * rect.width;
+    const gHeightPx = ((gridBottom - gridTop) / 100) * rect.height;
 
-    bCtx.save();
-    bCtx.fillStyle = '#000000';
-    bCtx.fillRect(0, 0, 256, 256);
-
-    const targetRatio = 256 / viewportPx;
-    bCtx.translate(128 + offsetX * targetRatio, 128 + offsetY * targetRatio);
-    bCtx.rotate((rotation * Math.PI) / 180);
-    bCtx.scale(scale * targetRatio, scale * targetRatio);
-
-    const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
-    const drawW = currentImage.width * baseScale;
-    const drawH = currentImage.height * baseScale;
-    bCtx.drawImage(currentImage, -drawW / 2, -drawH / 2, drawW, drawH);
-    bCtx.restore();
+    // Draw cropCanvas sub-region (matching the exact yellow grid) stretched to 256x256
+    bCtx.drawImage(
+      cropCanvas,
+      gLeftPx, gTopPx, gWidthPx, gHeightPx,
+      0, 0, 256, 256
+    );
 
     // 2. Extract Grayscale [0, 1] for 256x256
     const imgData = bCtx.getImageData(0, 0, 256, 256);

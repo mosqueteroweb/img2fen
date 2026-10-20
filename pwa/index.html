@@ -77,14 +77,14 @@
           <button id="btn-crop-rotate-90" class="icon-btn" title="Rotar 90°">🔄</button>
         </div>
 
-        <p class="crop-instruction">👉 Mueve y pellizca con dos dedos para hacer zoom y rotar el tablero.</p>
+        <p class="crop-instruction">👉 Arrastra los 4 puntos amarillos de las esquinas de la cuadrícula o mueve la imagen.</p>
 
-        <!-- Viewport Container with 8x8 Grid -->
+        <!-- Viewport Container with Adjustable 8x8 Grid -->
         <div class="viewport-wrapper">
           <div id="crop-viewport" class="crop-viewport">
             <canvas id="crop-canvas"></canvas>
-            <!-- 8x8 Dual-Stroke Grid Overlay -->
-            <div class="grid-overlay">
+            <!-- 8x8 Dual-Stroke Adjustable Grid Overlay -->
+            <div id="grid-overlay" class="grid-overlay">
               <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
               <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
               <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
@@ -101,6 +101,12 @@
               <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
               <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
               <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+
+              <!-- Corner & Edge Resize Handles -->
+              <div class="grid-handle handle-tl" data-handle="tl" title="Arrastrar esquina superior izquierda (A8)"></div>
+              <div class="grid-handle handle-tr" data-handle="tr" title="Arrastrar esquina superior derecha (H8)"></div>
+              <div class="grid-handle handle-bl" data-handle="bl" title="Arrastrar esquina inferior izquierda (A1)"></div>
+              <div class="grid-handle handle-br" data-handle="br" title="Arrastrar esquina inferior derecha (H1)"></div>
             </div>
             <!-- Ephemeral Rotation Angle Badge -->
             <div id="rotation-badge" class="rotation-badge hidden">↺ 0°</div>
