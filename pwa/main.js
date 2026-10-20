@@ -80,6 +80,7 @@ const btnZoomIn = document.getElementById('btn-zoom-in');
 const btnZoomOut = document.getElementById('btn-zoom-out');
 const btnZoomReset = document.getElementById('btn-zoom-reset');
 const btnAutoDetect = document.getElementById('btn-auto-detect');
+const btnCornerFit = document.getElementById('btn-corner-fit');
 const turnWhite = document.getElementById('turn-white');
 const turnBlack = document.getElementById('turn-black');
 const btnProcessScan = document.getElementById('btn-process-scan');
@@ -365,49 +366,102 @@ function autoDetectChessboard() {
     ctx.drawImage(currentImage, 0, 0);
 
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const gray = new Uint8Array(canvas.width * canvas.height);
-    for (let i = 0; i < gray.length; i++) {
+    const grayData = new Float32Array(canvas.width * canvas.height);
+    for (let i = 0; i < grayData.length; i++) {
       const idx = i * 4;
-      gray[i] = Math.round(0.299 * imgData.data[idx] + 0.587 * imgData.data[idx + 1] + 0.114 * imgData.data[idx + 2]);
+      grayData[i] = 0.299 * imgData.data[idx] + 0.587 * imgData.data[idx + 1] + 0.114 * imgData.data[idx + 2];
     }
 
-    const corners = findChessboardCorners(gray, canvas.width, canvas.height);
+    const corners = findChessboardCorners({
+      data: grayData,
+      width: canvas.width,
+      height: canvas.height,
+    });
+
     if (corners) {
-      const minX = Math.min(corners[0][0], corners[1][0], corners[2][0], corners[3][0]);
-      const maxX = Math.max(corners[0][0], corners[1][0], corners[2][0], corners[3][0]);
-      const minY = Math.min(corners[0][1], corners[1][1], corners[2][1], corners[3][1]);
-      const maxY = Math.max(corners[0][1], corners[1][1], corners[2][1], corners[3][1]);
-
-      const bw = maxX - minX;
-      const bh = maxY - minY;
-      const bcx = (minX + maxX) / 2;
-      const bcy = (minY + maxY) / 2;
-
-      const rect = cropViewport.getBoundingClientRect();
-      const viewportPx = rect.width;
-      const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
-      const baseLeft = (viewportPx - currentImage.width * baseScale) / 2;
-      const baseTop = (viewportPx - currentImage.height * baseScale) / 2;
-
-      const boardSizeOnScreen = Math.max(bw, bh) * baseScale;
-      if (boardSizeOnScreen > 10) {
-        scale = Math.min(Math.max(viewportPx / boardSizeOnScreen, 0.5), 6.0);
-        const screenBcx = baseLeft + bcx * baseScale;
-        const screenBcy = baseTop + bcy * baseScale;
-        offsetX = (viewportPx / 2 - screenBcx) * scale;
-        offsetY = (viewportPx / 2 - screenBcy) * scale;
-        rotation = 0;
-      }
+      applyCornersToViewport(corners.x0, corners.y0, corners.x1, corners.y1);
+    } else {
+      // Fallback: estimate board from image bounds if square or nearly square
+      guessSquareBoardBounds();
     }
   } catch (err) {
     console.warn('Auto-detect skipped or failed:', err);
+    guessSquareBoardBounds();
   } finally {
     hideLoading();
     renderCanvas();
   }
 }
 
+function applyCornersToViewport(x0, y0, x1, y1) {
+  const bw = Math.abs(x1 - x0);
+  const bh = Math.abs(y1 - y0);
+  const bcx = (x0 + x1) / 2;
+  const bcy = (y0 + y1) / 2;
+
+  const rect = cropViewport.getBoundingClientRect();
+  const viewportPx = rect.width;
+  const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
+  const baseLeft = (viewportPx - currentImage.width * baseScale) / 2;
+  const baseTop = (viewportPx - currentImage.height * baseScale) / 2;
+
+  const boardSizeOnScreen = Math.max(bw, bh) * baseScale;
+  if (boardSizeOnScreen > 10) {
+    scale = Math.min(Math.max(viewportPx / boardSizeOnScreen, 0.5), 6.0);
+    const screenBcx = baseLeft + bcx * baseScale;
+    const screenBcy = baseTop + bcy * baseScale;
+    offsetX = (viewportPx / 2 - screenBcx) * scale;
+    offsetY = (viewportPx / 2 - screenBcy) * scale;
+    rotation = 0;
+  }
+}
+
+function guessSquareBoardBounds() {
+  if (!currentImage) return;
+  // If the image itself is approximately square, fit it directly
+  const minDim = Math.min(currentImage.width, currentImage.height);
+  const maxDim = Math.max(currentImage.width, currentImage.height);
+  if (minDim / maxDim > 0.85) {
+    resetCropState();
+  }
+}
+
+// Corner click / auto-fit helper
+let cornerStep = 0;
+function cycleCornerOrQuickFit() {
+  if (!currentImage) return;
+
+  const rect = cropViewport.getBoundingClientRect();
+  const viewportPx = rect.width;
+  const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
+  const minDim = Math.min(currentImage.width, currentImage.height);
+
+  // Cycle through sensible desktop alignments:
+  // 0: Centered square crop
+  // 1: Fit 100% width
+  // 2: Fit 100% height
+  cornerStep = (cornerStep + 1) % 3;
+
+  if (cornerStep === 0) {
+    // Exact square board fit
+    scale = (viewportPx / (minDim * baseScale));
+    offsetX = 0;
+    offsetY = 0;
+    rotation = 0;
+  } else if (cornerStep === 1) {
+    scale = 1.0;
+    offsetX = 0;
+    offsetY = 0;
+    rotation = 0;
+  } else {
+    autoDetectChessboard();
+  }
+
+  renderCanvas();
+}
+
 btnAutoDetect.addEventListener('click', autoDetectChessboard);
+btnCornerFit.addEventListener('click', cycleCornerOrQuickFit);
 
 /**
  * -------------------------------------------------------------

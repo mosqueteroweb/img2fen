@@ -336,23 +336,39 @@ body {
   color: var(--text-secondary);
 }
 
+.quick-fit-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .ctrl-btn {
   background-color: var(--surface-variant);
   border: 1px solid var(--border-color);
   color: #fff;
-  width: 36px;
+  min-width: 36px;
   height: 36px;
+  padding: 0 8px;
   border-radius: var(--radius-sm);
-  font-size: 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
 }
 
 .auto-btn {
-  background-color: #2b3a4a;
-  border-color: #3b526b;
+  background-color: #1e3a5f;
+  border-color: #2e598d;
+  color: #90caf9;
+}
+
+.corner-btn {
+  background-color: #3e2723;
+  border-color: #5d4037;
+  color: #ffcc80;
 }
 
 .turn-selector-card {
