@@ -17,6 +17,13 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
+/**
+ * DigitalChessClassifier: 100% offline chess tile recognition engine.
+ *
+ * Uses Microsoft ONNX Runtime with the neural model 'chess-tiles-v2.onnx' (MIT License,
+ * Copyright (c) 2026 SORTINO LABS S.R.L. / kibitzo.com / fenshot).
+ * See ATTRIBUTION.md for complete third-party licensing notices.
+ */
 class DigitalChessClassifier(private val context: Context) : AutoCloseable {
 
     companion object {

@@ -2,48 +2,48 @@
 
 **Conversor de diagramas e imágenes a posiciones FEN de ajedrez para Android.**
 
-Img2FEN es una aplicación Android nativa (Kotlin + Jetpack Compose) que permite capturar fotografías con la cámara o seleccionar imágenes de la galería con diagramas de ajedrez (de libros, revistas, pantallas o problemas impresos) y convertirlos al instante a formato **FEN (Forsyth–Edwards Notation)** utilizando un modelo de Machine Learning local (**TensorFlow Lite**), funcionando de forma **100% offline y privada**.
+Img2FEN es una aplicación Android nativa (Kotlin + Jetpack Compose) que permite capturar fotografías con la cámara o seleccionar imágenes de la galería con diagramas de ajedrez (de libros, revistas, pantallas de Chess.com/Lichess o problemas impresos) y convertirlos al instante a formato **FEN (Forsyth–Edwards Notation)** utilizando un modelo neuronal local de alta precisión con **ONNX Runtime**, funcionando de forma **100% offline, segura y privada** (sin permisos de internet).
 
 ---
 
 ## 🚀 Características Principales
 
-- **📸 Captura Rápida y Galería**:
+- **📸 Captura Rápida, Galería y Compartir**:
   - Haz una foto directamente con la cámara del dispositivo o importa una captura de pantalla desde la galería.
-  - Guía visual interactiva de encuadre y recorte de la cuadrícula $8 \times 8$.
-  - Botón de rotación rápida de imagen (0°, 90°, 180°, 270°).
+  - **Integración con "Compartir con..." de Android**: comparte capturas de ajedrez directamente desde Twitter/X, WhatsApp, navegadores o apps externas hacia Img2FEN.
+  - Auto-detección algorítmica de cuadrícula de tablero y centrado automático con botón de varita mágica.
+  - Guía visual interactiva de encuadre, rotación táctil con dos dedos (con indicador de ángulo efímero) y rotación rápida de 90°.
 
 - **🧠 Reconocimiento 100% Local (Offline)**:
-  - Modelo embebido `chess-piece-recognizer.tflite` que clasifica las 64 casillas en milisegundos.
-  - Sin necesidad de conexión a internet, servidores externos ni claves API.
-  - Respeto por la privacidad: tus fotos nunca salen de tu teléfono.
+  - Modelo embebido `chess-tiles-v2.onnx` ejecutado mediante **Microsoft ONNX Runtime**, clasificando las 64 casillas en milisegundos con alta precisión.
+  - Sin necesidad de conexión a internet, servidores externos ni claves API (código 100% air-gapped).
+  - Respeto absoluto por la privacidad: tus fotos nunca salen de tu teléfono.
 
 - **⏱️ Selector de Turno Previo**:
   - Elige de forma destacada si **Juegan Blancas (`w`)** o **Juegan Negras (`b`)** antes de generar la notación final, adaptándose a cualquier indicador del libro o diagrama.
 
 - **🎯 Tablero Táctil Interactivo**:
   - Previsualización gráfica de la posición reconocida sobre un tablero de ajedrez estilizado.
-  - Si un diagrama de imprenta antigua presenta trazos atípicos, toca cualquier casilla para cambiar la pieza o vaciarla en un segundo mediante el selector emergente.
+  - Si un diagrama de imprenta antigua presenta trazos atípicos, toca cualquier casilla para cambiar la pieza o vaciarla al instante mediante el selector emergente.
 
-- **📜 Historial de los Últimos 10 FENs**:
-  - Guarda automáticamente una lista de los 10 últimos diagramas analizados.
+- **📜 Historial de los Últimos FENs**:
+  - Guarda automáticamente una lista de los últimos diagramas analizados.
   - Copia o reabre cualquier posición anterior con un solo toque desde la pantalla principal.
 
 - **🔗 Exportación Inmediata**:
   - **Copiar FEN**: Un toque para copiar al portapapeles.
-  - **Lichess**: Botón directo para abrir la posición en el analizador de Lichess (`https://lichess.org/analysis/...`).
   - **Chess.com**: Botón directo para abrir en el analizador de Chess.com.
-  - **Compartir**: Menú nativo para enviar a cualquier otra app de ajedrez (DroidFish, ChessBase, etc.).
+  - **Compartir**: Menú nativo para enviar a cualquier otra app de ajedrez (DroidFish, Lichess, ChessBase, etc.).
 
 ---
 
 ## 🛠️ Stack Tecnológico
 
 - **Lenguaje**: Kotlin 2.x
-- **UI**: Jetpack Compose + Material 3
-- **Motor ML**: TensorFlow Lite + Google ML Kit Custom Image Labeling
-- **Manejo de Imágenes**: Coil + Android Graphics API
-- **Arquitectura**: Arquitectura moderna con StateFlow, Coroutines y separación clara por capas (model, data, engine, ui).
+- **UI**: Jetpack Compose + Material 3 (Material You)
+- **Motor ML**: Microsoft ONNX Runtime Android (`com.microsoft.onnxruntime:onnxruntime-android:1.19.2`)
+- **Manejo de Imágenes**: Android Graphics API + Coil
+- **Arquitectura**: Arquitectura modular con StateFlow, Coroutines y separación clara por capas (model, data, engine, ui).
 
 ---
 
@@ -55,18 +55,18 @@ Img2FEN es una aplicación Android nativa (Kotlin + Jetpack Compose) que permite
 
 ```bash
 # Ejecutar tests unitarios
-./gradlew test
+./gradlew testDebugUnitTest
 
-# Compilar APKs (incluye arm64-v8a optimizado y universal)
+# Compilar APK de depuración
 ./gradlew assembleDebug
 ```
 
-Los APKs generados se ubican en:
-`app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`
-`app/build/outputs/apk/debug/app-universal-debug.apk`
+El APK generado se ubica en:
+`app/build/outputs/apk/debug/app-debug.apk`
 
 ---
 
-## 📄 Licencia
+## 📄 Licencia y Atribuciones
 
-Este proyecto está bajo la licencia GNU General Public License v3.0 (GPLv3). Consulta el archivo [LICENSE](LICENSE) para más detalles.
+- **Licencia Principal**: Este proyecto está publicado bajo la licencia **GNU General Public License v3.0 (GPLv3)**. Consulta el archivo [LICENSE](LICENSE) para más detalles.
+- **Atribuciones de Terceros**: El modelo de reconocimiento de casillas (`chess-tiles-v2.onnx`), el motor ONNX Runtime y los activos vectoriales de ajedrez están incluidos bajo licencias compatibles (**MIT License** y **CC BY-SA 3.0**). Consulta el archivo [ATTRIBUTION.md](ATTRIBUTION.md) para los avisos y créditos legales completos.
