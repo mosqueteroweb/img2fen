@@ -89,22 +89,24 @@ body {
   color: #fff;
   border: none;
   border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 700;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 4px;
-  transition: background-color 0.2s, transform 0.1s;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.4);
+  transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
 }
 
 .install-btn:hover {
   background-color: var(--primary-hover);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.6);
 }
 
 .install-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
 
 .install-btn.hidden {
