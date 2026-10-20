@@ -183,17 +183,43 @@ function hideLoading() {
  */
 function handleFile(file) {
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
+
+  try {
+    showLoading('Cargando imagen...');
+    const objectUrl = URL.createObjectURL(file);
     const img = new Image();
+
     img.onload = async () => {
-      currentImage = img;
-      resetCropState();
-      await processImageDirectlyToResult();
+      try {
+        URL.revokeObjectURL(objectUrl);
+        currentImage = img;
+        resetCropState();
+        await processImageDirectlyToResult();
+      } catch (err) {
+        console.error('Error procesando imagen cargada:', err);
+        hideLoading();
+        showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
+        showScreen('crop');
+        requestAnimationFrame(() => {
+          renderCanvas();
+          renderPerspectiveGrid();
+        });
+      }
     };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
+
+    img.onerror = (err) => {
+      URL.revokeObjectURL(objectUrl);
+      hideLoading();
+      console.error('Error al decodificar la imagen:', err);
+      showToast('⚠️ No se pudo leer el archivo de imagen.', 3000);
+    };
+
+    img.src = objectUrl;
+  } catch (err) {
+    hideLoading();
+    console.error('Error en handleFile:', err);
+    showToast('⚠️ Error al abrir el archivo de imagen.', 3000);
+  }
 }
 
 function resetCropState() {
@@ -885,68 +911,89 @@ async function processImageDirectlyToResult() {
     // 1. Detect board location with U-Net (runs in ~30ms)
     const bounds = await detectBoardBoundsWithUNet(currentImage);
 
+    // If U-Net did NOT detect a clear board (e.g. tilted photo or angled board)
+    if (!bounds) {
+      hideLoading();
+      showToast('⚠️ No se reconoció el tablero automáticamente. Ajusta las esquinas.', 4000);
+      gridCorners = {
+        tl: { x: 10, y: 10 },
+        tr: { x: 90, y: 10 },
+        br: { x: 90, y: 90 },
+        bl: { x: 10, y: 90 }
+      };
+      showScreen('crop');
+      requestAnimationFrame(() => {
+        renderCanvas();
+        renderPerspectiveGrid();
+      });
+      return;
+    }
+
+    // Pre-configure manual crop coordinates in case user later opens manual crop
+    const viewportPx = 500;
+    const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
+    const drawW = currentImage.width * baseScale;
+    const drawH = currentImage.height * baseScale;
+    const drawLeft = (viewportPx - drawW) / 2;
+    const drawTop = (viewportPx - drawH) / 2;
+
+    const screenLeft = drawLeft + bounds.realXmin * baseScale;
+    const screenRight = drawLeft + bounds.realXmax * baseScale;
+    const screenTop = drawTop + bounds.realYmin * baseScale;
+    const screenBottom = drawTop + bounds.realYmax * baseScale;
+
+    const leftPct = Math.max(0, Math.min(95, (screenLeft / viewportPx) * 100));
+    const rightPct = Math.max(leftPct + 5, Math.min(100, (screenRight / viewportPx) * 100));
+    const topPct = Math.max(0, Math.min(95, (screenTop / viewportPx) * 100));
+    const bottomPct = Math.max(topPct + 5, Math.min(100, (screenBottom / viewportPx) * 100));
+
+    gridCorners = {
+      tl: { x: leftPct, y: topPct },
+      tr: { x: rightPct, y: topPct },
+      br: { x: rightPct, y: bottomPct },
+      bl: { x: leftPct, y: bottomPct }
+    };
+
+    // Draw detected board sub-region stretched to 256x256
     const boardCanvas = document.createElement('canvas');
     boardCanvas.width = 256;
     boardCanvas.height = 256;
     const bCtx = boardCanvas.getContext('2d');
-
-    if (bounds) {
-      // Draw detected board sub-region stretched to 256x256
-      bCtx.drawImage(
-        currentImage,
-        bounds.realXmin, bounds.realYmin, bounds.realXmax - bounds.realXmin, bounds.realYmax - bounds.realYmin,
-        0, 0, 256, 256
-      );
-
-      // Pre-configure manual crop coordinates in case user uses "Ajustar encuadre manual"
-      const viewportPx = 500;
-      const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
-      const drawW = currentImage.width * baseScale;
-      const drawH = currentImage.height * baseScale;
-      const drawLeft = (viewportPx - drawW) / 2;
-      const drawTop = (viewportPx - drawH) / 2;
-
-      const screenLeft = drawLeft + bounds.realXmin * baseScale;
-      const screenRight = drawLeft + bounds.realXmax * baseScale;
-      const screenTop = drawTop + bounds.realYmin * baseScale;
-      const screenBottom = drawTop + bounds.realYmax * baseScale;
-
-      const leftPct = Math.max(0, Math.min(95, (screenLeft / viewportPx) * 100));
-      const rightPct = Math.max(leftPct + 5, Math.min(100, (screenRight / viewportPx) * 100));
-      const topPct = Math.max(0, Math.min(95, (screenTop / viewportPx) * 100));
-      const bottomPct = Math.max(topPct + 5, Math.min(100, (screenBottom / viewportPx) * 100));
-
-      gridCorners = {
-        tl: { x: leftPct, y: topPct },
-        tr: { x: rightPct, y: topPct },
-        br: { x: rightPct, y: bottomPct },
-        bl: { x: leftPct, y: bottomPct }
-      };
-    } else {
-      // Fallback: draw full image if no clear board detected
-      bCtx.drawImage(currentImage, 0, 0, currentImage.width, currentImage.height, 0, 0, 256, 256);
-      gridCorners = {
-        tl: { x: 5, y: 5 },
-        tr: { x: 95, y: 5 },
-        br: { x: 95, y: 95 },
-        bl: { x: 5, y: 95 }
-      };
-    }
+    bCtx.drawImage(
+      currentImage,
+      bounds.realXmin, bounds.realYmin, bounds.realXmax - bounds.realXmin, bounds.realYmax - bounds.realYmin,
+      0, 0, 256, 256
+    );
 
     // 2. Classify pieces and display result directly
-    await runTileInferenceOnBoardCanvas(boardCanvas);
-    showToast('✨ Posición reconocida al instante con IA', 2500);
+    const recognized = await runTileInferenceOnBoardCanvas(boardCanvas, false);
+    if (recognized) {
+      showToast('✨ Posición reconocida al instante con IA', 2500);
+    } else {
+      // Detected region did not contain a valid chess position
+      hideLoading();
+      showToast('⚠️ No se reconoció el tablero con claridad. Ajusta las esquinas.', 4000);
+      showScreen('crop');
+      requestAnimationFrame(() => {
+        renderCanvas();
+        renderPerspectiveGrid();
+      });
+    }
   } catch (err) {
     console.error('Error in processImageDirectlyToResult:', err);
-    showToast('Error al analizar la imagen.', 2500);
+    hideLoading();
+    showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
     showScreen('crop');
-    requestAnimationFrame(renderCanvas);
+    requestAnimationFrame(() => {
+      renderCanvas();
+      renderPerspectiveGrid();
+    });
   } finally {
     hideLoading();
   }
 }
 
-async function runTileInferenceOnBoardCanvas(boardCanvas) {
+async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false) {
   const session = await getInferenceSession();
 
   // 1. Extract Grayscale [0, 1] for 256x256
@@ -982,6 +1029,7 @@ async function runTileInferenceOnBoardCanvas(boardCanvas) {
 
   // 4. Parse classifications
   const recognizedGrid = [];
+  let pieceCount = 0;
   for (let i = 0; i < 64; i++) {
     let maxProb = -1;
     let maxClass = 0;
@@ -993,7 +1041,13 @@ async function runTileInferenceOnBoardCanvas(boardCanvas) {
       }
     }
     const char = LABELS[maxClass];
+    if (char !== '1') pieceCount++;
     recognizedGrid.push(char === '1' ? null : char);
+  }
+
+  // In auto mode, if virtually no pieces were recognized, treat as unverified
+  if (!isManual && pieceCount < 2) {
+    return false;
   }
 
   // 5. Check orientation & sanitize kings
@@ -1005,6 +1059,7 @@ async function runTileInferenceOnBoardCanvas(boardCanvas) {
   updateFenDisplay();
   saveToHistory(getFenString());
   showScreen('result');
+  return true;
 }
 
 /**
@@ -1032,7 +1087,7 @@ btnProcessScan?.addEventListener('click', async () => {
 
     const boardCanvas = extractWarpedBoard(cropCanvas, H);
 
-    await runTileInferenceOnBoardCanvas(boardCanvas);
+    await runTileInferenceOnBoardCanvas(boardCanvas, true);
     showToast('✨ Posición actualizada con el nuevo encuadre', 2500);
   } catch (err) {
     console.error('Classification error:', err);
@@ -1284,12 +1339,14 @@ inputCamera.addEventListener('change', (e) => {
   if (e.target.files && e.target.files[0]) {
     handleFile(e.target.files[0]);
   }
+  e.target.value = '';
 });
 
 inputGallery.addEventListener('change', (e) => {
   if (e.target.files && e.target.files[0]) {
     handleFile(e.target.files[0]);
   }
+  e.target.value = '';
 });
 
 /**
@@ -1474,7 +1531,7 @@ async function handleCheckForUpdates() {
         window.location.reload();
       }
     } else {
-      showToast('✅ Ya tienes la última versión (v2.2.0)', 2500);
+      showToast('✅ Ya tienes la última versión (v2.3.0)', 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);
