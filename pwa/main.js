@@ -1425,14 +1425,14 @@ function validateCurrentPosition() {
 
   // King rules
   if (whiteKings.length === 0) {
-    errors.push('Falta el Rey Blanco (♔). Toca una casilla vacía para colocarlo.');
+    errors.push('Falta el Rey Blanco (♔). <div class="validator-tip">👉 Toca una casilla vacía para colocarlo.</div>');
   } else if (whiteKings.length > 1) {
     errors.push(`Hay ${whiteKings.length} Reyes Blancos (solo debe haber 1)`);
     whiteKings.forEach((idx) => invalidSquares.add(idx));
   }
 
   if (blackKings.length === 0) {
-    errors.push('Falta el Rey Negro (♚). Toca una casilla vacía para colocarlo.');
+    errors.push('Falta el Rey Negro (♚). <div class="validator-tip">👉 Toca una casilla vacía para colocarlo.</div>');
   } else if (blackKings.length > 1) {
     errors.push(`Hay ${blackKings.length} Reyes Negros (solo debe haber 1)`);
     blackKings.forEach((idx) => invalidSquares.add(idx));
@@ -1504,7 +1504,7 @@ function validateCurrentPosition() {
         invalidSquares.add(whiteKings[0]);
         invalidSquares.add(blackKings[0]);
       } else if (oppInCheck) {
-        errors.push(`El bando que no tiene el turno (${oppColor === 'w' ? 'Blancas' : 'Negras'}) está en jaque. 👉 Cambia el turno de juego a ${oppColor === 'w' ? 'Blancas' : 'Negras'}.`);
+        errors.push(`El bando que no tiene el turno (${oppColor === 'w' ? 'Blancas' : 'Negras'}) está en jaque. <div class="validator-tip">👉 Cambia el turno de juego a ${oppColor === 'w' ? 'Blancas' : 'Negras'}.</div>`);
         inCheckSquare = oppColor === 'w' ? whiteKings[0] : blackKings[0];
       } else if (activeInCheck) {
         inCheckSquare = activeColor === 'w' ? whiteKings[0] : blackKings[0];
