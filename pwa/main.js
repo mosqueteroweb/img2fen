@@ -93,6 +93,11 @@ let touchStartPanY = 0;
 let isTouching = false;
 let touchCount = 0;
 
+let cachedViewportRect = null;
+let animFrameRequested = false;
+const svgGridLines = [];
+let sharedGridCanvas = null;
+
 /**
  * -------------------------------------------------------------
  * DOM REFERENCES
@@ -303,10 +308,20 @@ function projectPoint(H, u, v) {
   return { x: x / w, y: y / w };
 }
 
-function renderPerspectiveGrid() {
+function initGridSvgLines() {
+  if (!gridInnerLines || svgGridLines.length === 14) return;
+  gridInnerLines.innerHTML = '';
+  for (let i = 0; i < 14; i++) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    gridInnerLines.appendChild(line);
+    svgGridLines.push(line);
+  }
+}
+
+function renderPerspectiveGrid(viewportRect = null) {
   if (!gridSvg || !cropViewport) return;
 
-  const rect = cropViewport.getBoundingClientRect();
+  const rect = viewportRect || cachedViewportRect || cropViewport.getBoundingClientRect();
   const w = rect.width || 400;
   const h = rect.height || 400;
 
@@ -340,24 +355,36 @@ function renderPerspectiveGrid() {
     );
   }
 
-  // 14 perspective internal grid lines (7 vertical + 7 horizontal)
+  // 14 perspective internal grid lines (7 vertical + 7 horizontal) - updated directly without DOM thrashing
   if (gridInnerLines) {
-    let linesHtml = '';
+    if (svgGridLines.length < 14) initGridSvgLines();
+    let lineIdx = 0;
     // Vertical perspective lines
     for (let k = 1; k < 8; k++) {
       const u = k / 8;
       const topPt = projectPoint(H, u, 0);
       const botPt = projectPoint(H, u, 1);
-      linesHtml += `<line x1="${topPt.x.toFixed(1)}" y1="${topPt.y.toFixed(1)}" x2="${botPt.x.toFixed(1)}" y2="${botPt.y.toFixed(1)}" />`;
+      const line = svgGridLines[lineIdx++];
+      if (line) {
+        line.setAttribute('x1', topPt.x.toFixed(1));
+        line.setAttribute('y1', topPt.y.toFixed(1));
+        line.setAttribute('x2', botPt.x.toFixed(1));
+        line.setAttribute('y2', botPt.y.toFixed(1));
+      }
     }
     // Horizontal perspective lines
     for (let k = 1; k < 8; k++) {
       const v = k / 8;
       const leftPt = projectPoint(H, 0, v);
       const rightPt = projectPoint(H, 1, v);
-      linesHtml += `<line x1="${leftPt.x.toFixed(1)}" y1="${leftPt.y.toFixed(1)}" x2="${rightPt.x.toFixed(1)}" y2="${rightPt.y.toFixed(1)}" />`;
+      const line = svgGridLines[lineIdx++];
+      if (line) {
+        line.setAttribute('x1', leftPt.x.toFixed(1));
+        line.setAttribute('y1', leftPt.y.toFixed(1));
+        line.setAttribute('x2', rightPt.x.toFixed(1));
+        line.setAttribute('y2', rightPt.y.toFixed(1));
+      }
     }
-    gridInnerLines.innerHTML = linesHtml;
   }
 }
 
@@ -369,26 +396,34 @@ function extractWarpedBoard(sourceCanvas, H) {
   const boardCanvas = document.createElement('canvas');
   boardCanvas.width = 256;
   boardCanvas.height = 256;
-  const bCtx = boardCanvas.getContext('2d');
+  const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
   const outputImgData = bCtx.createImageData(256, 256);
   const outData = outputImgData.data;
 
-  const sCtx = sourceCanvas.getContext('2d');
+  const sCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
   const srcW = sourceCanvas.width;
   const srcH = sourceCanvas.height;
   const srcData = sCtx.getImageData(0, 0, srcW, srcH).data;
 
+  const inv256 = 1.0 / 256.0;
+
   for (let y = 0; y < 256; y++) {
-    const v = (y + 0.5) / 256.0;
+    const v = (y + 0.5) * inv256;
+    // Precalculate row invariants
+    const px0 = H[1] * v + H[2];
+    const py0 = H[4] * v + H[5];
+    const pw0 = H[7] * v + H[8];
+    const rowOffset = y * 256;
+
     for (let x = 0; x < 256; x++) {
-      const u = (x + 0.5) / 256.0;
-      const px = H[0] * u + H[1] * v + H[2];
-      const py = H[3] * u + H[4] * v + H[5];
-      const pw = H[6] * u + H[7] * v + H[8];
+      const u = (x + 0.5) * inv256;
+      const px = H[0] * u + px0;
+      const py = H[3] * u + py0;
+      const pw = H[6] * u + pw0;
       const srcX = px / pw;
       const srcY = py / pw;
 
-      const outIdx = (y * 256 + x) * 4;
+      const outIdx = (rowOffset + x) * 4;
 
       if (srcX >= 0 && srcX < srcW && srcY >= 0 && srcY < srcH) {
         const x0 = Math.floor(srcX);
@@ -408,9 +443,9 @@ function extractWarpedBoard(sourceCanvas, H) {
         const idx01 = (y1 * srcW + x0) * 4;
         const idx11 = (y1 * srcW + x1) * 4;
 
-        outData[outIdx]     = w00 * srcData[idx00]     + w10 * srcData[idx10]     + w01 * srcData[idx01]     + w11 * srcData[idx11];
-        outData[outIdx + 1] = w00 * srcData[idx00 + 1] + w10 * srcData[idx10 + 1] + w01 * srcData[idx01 + 1] + w11 * srcData[idx11 + 1];
-        outData[outIdx + 2] = w00 * srcData[idx00 + 2] + w10 * srcData[idx10 + 2] + w01 * srcData[idx01 + 2] + w11 * srcData[idx11 + 2];
+        outData[outIdx]     = (w00 * srcData[idx00]     + w10 * srcData[idx10]     + w01 * srcData[idx01]     + w11 * srcData[idx11]) | 0;
+        outData[outIdx + 1] = (w00 * srcData[idx00 + 1] + w10 * srcData[idx10 + 1] + w01 * srcData[idx01 + 1] + w11 * srcData[idx11 + 1]) | 0;
+        outData[outIdx + 2] = (w00 * srcData[idx00 + 2] + w10 * srcData[idx10 + 2] + w01 * srcData[idx01 + 2] + w11 * srcData[idx11 + 2]) | 0;
         outData[outIdx + 3] = 255;
       } else {
         outData[outIdx]     = 0;
@@ -445,10 +480,20 @@ function setRotatingActive() {
   }, 450);
 }
 
-function renderCanvas() {
+function scheduleRender() {
+  if (!animFrameRequested) {
+    animFrameRequested = true;
+    requestAnimationFrame(() => {
+      animFrameRequested = false;
+      renderCanvas(cachedViewportRect);
+    });
+  }
+}
+
+function renderCanvas(viewportRect = null) {
   if (!currentImage) return;
 
-  const rect = cropViewport.getBoundingClientRect();
+  const rect = viewportRect || cachedViewportRect || cropViewport.getBoundingClientRect();
   const width = Math.round(rect.width) || 400;
   const height = Math.round(rect.height) || 400;
 
@@ -472,7 +517,7 @@ function renderCanvas() {
 
   cropCtx.drawImage(currentImage, -drawW / 2, -drawH / 2, drawW, drawH);
   cropCtx.restore();
-  renderPerspectiveGrid();
+  renderPerspectiveGrid(rect);
 }
 
 /**
@@ -489,6 +534,7 @@ function getAngle(t1, t2) {
 }
 
 cropViewport.addEventListener('touchstart', (e) => {
+  cachedViewportRect = cropViewport.getBoundingClientRect();
   const handleEl = e.target.closest('.grid-handle');
   if (handleEl) {
     activeHandle = handleEl.dataset.handle;
@@ -517,7 +563,7 @@ cropViewport.addEventListener('touchstart', (e) => {
 
 function updateGridFromPointer(clientX, clientY) {
   if (!activeHandle) return;
-  const rect = cropViewport.getBoundingClientRect();
+  const rect = cachedViewportRect || cropViewport.getBoundingClientRect();
   const pctX = Math.min(Math.max(((clientX - rect.left) / rect.width) * 100, 0), 100);
   const pctY = Math.min(Math.max(((clientY - rect.top) / rect.height) * 100, 0), 100);
 
@@ -534,7 +580,7 @@ function updateGridFromPointer(clientX, clientY) {
     gridCorners.bl.x = pctX;
     gridCorners.bl.y = pctY;
   }
-  renderPerspectiveGrid();
+  renderPerspectiveGrid(rect);
 }
 
 cropViewport.addEventListener('touchmove', (e) => {
@@ -548,7 +594,7 @@ cropViewport.addEventListener('touchmove', (e) => {
   if (e.touches.length === 1 && touchCount === 1) {
     offsetX = e.touches[0].clientX - touchStartPanX;
     offsetY = e.touches[0].clientY - touchStartPanY;
-    renderCanvas();
+    scheduleRender();
   } else if (e.touches.length === 2) {
     const currentDist = getDistance(e.touches[0], e.touches[1]);
     const currentAngle = getAngle(e.touches[0], e.touches[1]);
@@ -567,7 +613,7 @@ cropViewport.addEventListener('touchmove', (e) => {
     offsetX = midX - touchStartPanX;
     offsetY = midY - touchStartPanY;
 
-    renderCanvas();
+    scheduleRender();
   }
 }, { passive: false });
 
@@ -588,6 +634,7 @@ let mouseStartX = 0;
 let mouseStartY = 0;
 
 cropViewport.addEventListener('mousedown', (e) => {
+  cachedViewportRect = cropViewport.getBoundingClientRect();
   const handleEl = e.target.closest('.grid-handle');
   if (handleEl) {
     activeHandle = handleEl.dataset.handle;
@@ -608,7 +655,7 @@ window.addEventListener('mousemove', (e) => {
   if (!isMouseDown) return;
   offsetX = e.clientX - mouseStartX;
   offsetY = e.clientY - mouseStartY;
-  renderCanvas();
+  scheduleRender();
 });
 
 window.addEventListener('mouseup', () => {
@@ -619,11 +666,18 @@ window.addEventListener('mouseup', () => {
   }
 });
 
+window.addEventListener('resize', () => {
+  if (screens.crop.classList.contains('active')) {
+    cachedViewportRect = cropViewport.getBoundingClientRect();
+    scheduleRender();
+  }
+});
+
 cropViewport.addEventListener('wheel', (e) => {
   e.preventDefault();
   const delta = e.deltaY < 0 ? 1.1 : 0.9;
   scale = Math.min(Math.max(scale * delta, 0.5), 6.0);
-  renderCanvas();
+  scheduleRender();
 }, { passive: false });
 
 /**
@@ -735,10 +789,12 @@ function detectChessboardByGridAndColor(img) {
     const sw = Math.round(origW * scale);
     const sh = Math.round(origH * scale);
 
-    const canvas = document.createElement('canvas');
-    canvas.width = sw;
-    canvas.height = sh;
-    const ctx = canvas.getContext('2d');
+    if (!sharedGridCanvas) {
+      sharedGridCanvas = document.createElement('canvas');
+    }
+    sharedGridCanvas.width = sw;
+    sharedGridCanvas.height = sh;
+    const ctx = sharedGridCanvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(img, 0, 0, sw, sh);
 
     const imgData = ctx.getImageData(0, 0, sw, sh).data;
@@ -933,8 +989,15 @@ async function detectBoardBoundsWithUNet(img) {
     }
 
     const inputTensor = new ort.Tensor('float32', tensorData, [1, 3, 256, 256]);
-    const results = await session.run({ input: inputTensor });
-    const rawOutput = results.output.data;
+    let rawOutput = null;
+    let results = null;
+    try {
+      results = await session.run({ input: inputTensor });
+      rawOutput = new Float32Array(results.output.data);
+    } finally {
+      inputTensor.dispose?.();
+      results?.output?.dispose?.();
+    }
 
     // 3. Threshold probability > 0.5 to create binary mask
     const binary = new Uint8Array(256 * 256);
@@ -1226,10 +1289,17 @@ async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false) {
     }
   }
 
-  // 3. Run ONNX Inference
+  // 3. Run ONNX Inference with tensor memory disposal
   const inputTensor = new ort.Tensor('float32', tilesInput, [64, TILE_PX * TILE_PX]);
-  const results = await session.run({ tiles: inputTensor });
-  const probs = results.probs.data;
+  let results = null;
+  let probs = null;
+  try {
+    results = await session.run({ tiles: inputTensor });
+    probs = new Float32Array(results.probs.data);
+  } finally {
+    inputTensor.dispose?.();
+    results?.probs?.dispose?.();
+  }
 
   // 4. Parse classifications
   const recognizedGrid = [];
@@ -1254,9 +1324,8 @@ async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false) {
     return false;
   }
 
-  // 5. Check orientation & sanitize kings
+  // 5. Check orientation (180° flip if necessary)
   currentSquares = autoOrientBoard(recognizedGrid);
-  sanitizeKings(currentSquares);
 
   // 6. Update UI & History
   renderBoard();
@@ -1316,17 +1385,6 @@ function autoOrientBoard(grid) {
     return [...grid].reverse();
   }
   return grid;
-}
-
-function sanitizeKings(grid) {
-  let whiteKings = 0;
-  let blackKings = 0;
-  grid.forEach((p) => {
-    if (p === 'K') whiteKings++;
-    if (p === 'k') blackKings++;
-  });
-  if (whiteKings === 0) grid[60] = 'K'; // e1
-  if (blackKings === 0) grid[4] = 'k';  // e8
 }
 
 /**
