@@ -425,6 +425,17 @@ body {
   transition: transform 0.1s, box-shadow 0.1s, background-color 0.15s;
 }
 
+/* Touch area expansion to meet 48px accessibility minimums */
+.grid-handle::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  right: -8px;
+  bottom: -8px;
+  border-radius: 50%;
+}
+
 .grid-handle:hover, .grid-handle.active {
   transform: translate(-50%, -50%) scale(1.25);
   background-color: #ffffff;

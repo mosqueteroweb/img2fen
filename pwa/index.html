@@ -77,7 +77,7 @@
       <!-- 2. CROP / ADJUST SCREEN -->
       <section id="screen-crop" class="screen">
         <div class="crop-header">
-          <button id="btn-crop-back" class="icon-btn" title="Atrás">⬅️</button>
+          <button id="btn-crop-back" class="icon-btn" title="Atrás" aria-label="Volver a inicio">⬅️</button>
           <h2>Ajustar Diagrama</h2>
           <div style="width: 32px;"></div>
         </div>
@@ -98,13 +98,13 @@
                 </svg>
 
                 <!-- 4 Independent Corner Drag Handles -->
-                <div id="corner-tl" class="grid-handle handle-tl" data-handle="tl" title="Esquina superior izquierda (A8)"><span>A8</span></div>
-                <div id="corner-tr" class="grid-handle handle-tr" data-handle="tr" title="Esquina superior derecha (H8)"><span>H8</span></div>
-                <div id="corner-br" class="grid-handle handle-br" data-handle="br" title="Esquina inferior derecha (H1)"><span>H1</span></div>
-                <div id="corner-bl" class="grid-handle handle-bl" data-handle="bl" title="Esquina inferior izquierda (A1)"><span>A1</span></div>
+                <div id="corner-tl" class="grid-handle handle-tl" data-handle="tl" role="button" tabindex="0" aria-label="Esquina superior izquierda A8" title="Esquina superior izquierda (A8)"><span>A8</span></div>
+                <div id="corner-tr" class="grid-handle handle-tr" data-handle="tr" role="button" tabindex="0" aria-label="Esquina superior derecha H8" title="Esquina superior derecha (H8)"><span>H8</span></div>
+                <div id="corner-br" class="grid-handle handle-br" data-handle="br" role="button" tabindex="0" aria-label="Esquina inferior derecha H1" title="Esquina inferior derecha (H1)"><span>H1</span></div>
+                <div id="corner-bl" class="grid-handle handle-bl" data-handle="bl" role="button" tabindex="0" aria-label="Esquina inferior izquierda A1" title="Esquina inferior izquierda (A1)"><span>A1</span></div>
 
                 <!-- Ephemeral Rotation Angle Badge -->
-                <div id="rotation-badge" class="rotation-badge hidden">↺ 0°</div>
+                <div id="rotation-badge" class="rotation-badge hidden" aria-hidden="true">↺ 0°</div>
               </div>
             </div>
           </div>
@@ -114,17 +114,17 @@
             <div class="crop-controls">
               <div class="zoom-controls">
                 <span class="label">Zoom:</span>
-                <button id="btn-zoom-in" class="ctrl-btn" title="Aumentar zoom">+</button>
-                <button id="btn-zoom-out" class="ctrl-btn" title="Reducir zoom">-</button>
-                <button id="btn-zoom-reset" class="ctrl-btn reset-btn" title="Restablecer vista a cero">❌</button>
+                <button id="btn-zoom-in" class="ctrl-btn" title="Aumentar zoom" aria-label="Aumentar zoom">+</button>
+                <button id="btn-zoom-out" class="ctrl-btn" title="Reducir zoom" aria-label="Reducir zoom">-</button>
+                <button id="btn-zoom-reset" class="ctrl-btn reset-btn" title="Restablecer vista a cero" aria-label="Restablecer vista">❌</button>
               </div>
               <div class="quick-fit-controls">
                 <span class="label">Ajustar:</span>
-                <button id="btn-auto-detect" class="ctrl-btn auto-btn" title="Detectar tablero automáticamente con IA">🪄 Auto</button>
-                <button id="btn-rotate-ccw-1" class="ctrl-btn" title="Girar 1° a la izquierda">↺ 1°</button>
-                <button id="btn-rotate-cw-1" class="ctrl-btn" title="Girar 1° a la derecha">↻ 1°</button>
-                <button id="btn-crop-rotate-90" class="ctrl-btn" title="Girar 90°">🔄 90°</button>
-                <button id="btn-corner-fit" class="ctrl-btn corner-btn" title="Adaptar cuadrícula al tamaño de la foto">📐 Esquinas</button>
+                <button id="btn-auto-detect" class="ctrl-btn auto-btn" title="Detectar tablero automáticamente con IA" aria-label="Detectar tablero automáticamente">🪄 Auto</button>
+                <button id="btn-rotate-ccw-1" class="ctrl-btn" title="Girar 1° a la izquierda" aria-label="Girar 1 grado a la izquierda">↺ 1°</button>
+                <button id="btn-rotate-cw-1" class="ctrl-btn" title="Girar 1° a la derecha" aria-label="Girar 1 grado a la derecha">↻ 1°</button>
+                <button id="btn-crop-rotate-90" class="ctrl-btn" title="Girar 90°" aria-label="Girar 90 grados">🔄 90°</button>
+                <button id="btn-corner-fit" class="ctrl-btn corner-btn" title="Adaptar cuadrícula al tamaño de la foto" aria-label="Adaptar cuadrícula a esquinas">📐 Esquinas</button>
               </div>
             </div>
 
@@ -139,9 +139,9 @@
       <!-- 3. RESULT SCREEN -->
       <section id="screen-result" class="screen">
         <div class="result-header">
-          <button id="btn-result-back" class="icon-btn" title="Atrás">⬅️</button>
+          <button id="btn-result-back" class="icon-btn" title="Atrás" aria-label="Volver atrás">⬅️</button>
           <h2>Posición Reconocida</h2>
-          <button id="btn-result-new" class="icon-btn" title="Nuevo Escaneo">➕</button>
+          <button id="btn-result-new" class="icon-btn" title="Nuevo Escaneo" aria-label="Nuevo Escaneo">➕</button>
         </div>
 
         <div class="result-workspace-layout">

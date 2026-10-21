@@ -1700,7 +1700,7 @@ btnCopyFen.addEventListener('click', async () => {
 
 btnOpenChesscom.addEventListener('click', () => {
   const fen = encodeURIComponent(getFenString());
-  window.open(`https://www.chess.com/analysis?fen=${fen}`, '_blank');
+  window.open(`https://www.chess.com/analysis?fen=${fen}`, '_blank', 'noopener,noreferrer');
 });
 
 btnShareFen.addEventListener('click', async () => {
