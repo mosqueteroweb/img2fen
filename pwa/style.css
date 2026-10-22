@@ -713,6 +713,54 @@ body {
   width: 82%;
   height: 82%;
   pointer-events: none;
+  z-index: 2;
+}
+
+.coord-rank,
+.coord-file {
+  position: absolute;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.85;
+  z-index: 1;
+}
+
+.coord-rank {
+  top: 2px;
+  left: 3px;
+}
+
+.coord-file {
+  bottom: 2px;
+  right: 3px;
+}
+
+.square.light .coord-rank,
+.square.light .coord-file {
+  color: var(--board-dark);
+}
+
+.square.dark .coord-rank,
+.square.dark .coord-file {
+  color: var(--board-light);
+}
+
+.board-view-controls {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.board-ctrl-btn {
+  flex: 1;
+  padding: 8px 12px;
+  height: auto;
+  min-height: 38px;
+  font-size: 0.82rem;
 }
 
 .board-hint {

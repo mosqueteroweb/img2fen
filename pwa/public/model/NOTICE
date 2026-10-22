@@ -1,6 +1,13 @@
 Img2FEN Model Notices & Credits
 ================================
 
+chess-yolo26n.onnx
+------------------
+Model architecture: YOLO26n 2D Chess OCR (16 classes: board, 12 pieces, rank-1 orientation marker, last-move tiles)
+Creator: Andrew Spano
+Source: https://github.com/AndrewSpano/2d-chess-ocr / https://huggingface.co/AndrewSpano/2d-chess-ocr
+License: MIT License
+
 board-segmentation.onnx
 -----------------------
 Model architecture: U-Net (Breakthrough U-Net V6)

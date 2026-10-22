@@ -9,12 +9,41 @@ ort.env.wasm.numThreads = 1;
 ort.env.wasm.proxy = false;
 
 const MODEL_PATH = `${ROOT_URL}model/chess-tiles-v2.onnx`;
+const YOLO_MODEL_PATH = `${ROOT_URL}model/chess-yolo26n.onnx`;
 const SEGMENTATION_MODEL_PATH = `${ROOT_URL}model/board-segmentation.onnx`;
 const LABELS = '1KQRBNPkqrbnp';
 const TILE_PX = 32;
 
+const YOLO_CLASSES = {
+  0: 'chessboard',
+  1: 'p', 2: 'r', 3: 'b', 4: 'n', 5: 'k', 6: 'q',
+  7: 'P', 8: 'R', 9: 'B', 10: 'N', 11: 'K', 12: 'Q',
+  13: 'rank_one_id', 14: 'last_move_start', 15: 'last_move_end',
+};
+
 let sessionPromise = null;
+let yoloSessionPromise = null;
 let segmentationSessionPromise = null;
+
+async function getYoloSession() {
+  if (!yoloSessionPromise) {
+    yoloSessionPromise = (async () => {
+      try {
+        const session = await ort.InferenceSession.create(YOLO_MODEL_PATH, {
+          executionProviders: ['wasm'],
+          graphOptimizationLevel: 'all',
+        });
+        console.log('ONNX YOLO26n 2D-Chess-OCR model loaded successfully in PWA!');
+        return session;
+      } catch (err) {
+        console.warn('Failed to load YOLO26n model:', err);
+        yoloSessionPromise = null;
+        return null;
+      }
+    })();
+  }
+  return yoloSessionPromise;
+}
 
 async function getInferenceSession() {
   if (!sessionPromise) {
@@ -65,6 +94,7 @@ let currentImage = null; // Image object
 let activeColor = 'w';
 let currentSquares = Array(64).fill(null); // pieces on 64 squares
 let selectedSquareIndex = -1;
+let isBoardViewFlipped = false; // true when displaying board from Black's perspective
 
 // Crop transform state
 let scale = 1.0;
@@ -97,6 +127,7 @@ let cachedViewportRect = null;
 let animFrameRequested = false;
 const svgGridLines = [];
 let sharedGridCanvas = null;
+let sharedYoloCanvas = null;
 
 /**
  * -------------------------------------------------------------
@@ -140,6 +171,9 @@ const cornerBL = document.getElementById('corner-bl');
 const rotationBadge = document.getElementById('rotation-badge');
 
 const chessboard = document.getElementById('chessboard');
+const btnFlipView = document.getElementById('btn-flip-view');
+const btnInvertBoard = document.getElementById('btn-invert-board');
+const viewSideLabel = document.getElementById('view-side-label');
 const fenText = document.getElementById('fen-text');
 const btnCopyFen = document.getElementById('btn-copy-fen');
 const btnOpenChesscom = document.getElementById('btn-open-chesscom');
@@ -457,6 +491,75 @@ function extractWarpedBoard(sourceCanvas, H) {
   }
   bCtx.putImageData(outputImgData, 0, 0);
   return boardCanvas;
+}
+
+function invert3x3(m) {
+  const [a, b, c, d, e, f, g, h, i] = m;
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+  const D = -(b * i - c * h), E = a * i - c * g, F = -(a * h - b * g);
+  const G = b * f - c * e, H = -(a * f - c * d), I = a * e - b * d;
+  const det = a * A + b * B + c * C;
+  if (Math.abs(det) < 1e-11) return null;
+  const invDet = 1.0 / det;
+  return [
+    A * invDet, D * invDet, G * invDet,
+    B * invDet, E * invDet, H * invDet,
+    C * invDet, F * invDet, I * invDet
+  ];
+}
+
+/**
+ * Rectifies the arbitrary quadrilateral from sourceCanvas into a 640x640 canvas
+ * with a context margin (e.g. 32px) so edge pieces retain full context for YOLO26n.
+ */
+function extractWarpedBoardWithMargin(sourceCanvas, H, size = 640, marginPx = 32) {
+  const boardCanvas = document.createElement('canvas');
+  boardCanvas.width = size;
+  boardCanvas.height = size;
+  const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
+  const outputImgData = bCtx.createImageData(size, size);
+  const outData = outputImgData.data;
+
+  const sCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const srcW = sourceCanvas.width;
+  const srcH = sourceCanvas.height;
+  const srcData = sCtx.getImageData(0, 0, srcW, srcH).data;
+
+  const innerSz = size - 2 * marginPx;
+  const invInner = 1.0 / innerSz;
+
+  for (let y = 0; y < size; y++) {
+    const v = (y - marginPx + 0.5) * invInner;
+    const px0 = H[1] * v + H[2];
+    const py0 = H[4] * v + H[5];
+    const pw0 = H[7] * v + H[8];
+    const rowOffset = y * size;
+
+    for (let x = 0; x < size; x++) {
+      const u = (x - marginPx + 0.5) * invInner;
+      const pw = H[6] * u + pw0;
+      const srcX = (H[0] * u + px0) / pw;
+      const srcY = (H[3] * u + py0) / pw;
+      const outIdx = (rowOffset + x) * 4;
+
+      if (srcX >= 0 && srcX < srcW && srcY >= 0 && srcY < srcH) {
+        const x0 = srcX | 0;
+        const y0 = srcY | 0;
+        const inIdx = (y0 * srcW + x0) * 4;
+        outData[outIdx]     = srcData[inIdx];
+        outData[outIdx + 1] = srcData[inIdx + 1];
+        outData[outIdx + 2] = srcData[inIdx + 2];
+        outData[outIdx + 3] = 255;
+      } else {
+        outData[outIdx]     = 114;
+        outData[outIdx + 1] = 114;
+        outData[outIdx + 2] = 114;
+        outData[outIdx + 3] = 255;
+      }
+    }
+  }
+  bCtx.putImageData(outputImgData, 0, 0);
+  return { canvas: boardCanvas, marginPx, innerSz };
 }
 
 function updateRotationBadge() {
@@ -1101,33 +1204,236 @@ async function detectBoardBoundsWithUNet(img) {
   }
 }
 
-async function autoDetectChessboardWithAI(manual = false) {
-  if (!currentImage) return;
+/**
+ * -------------------------------------------------------------
+ * YOLO26n 2D-CHESS-OCR OBJECT DETECTOR & TRAPEZOID REFINEMENT
+ * -------------------------------------------------------------
+ */
+async function runYolo26OnSource(source, origW, origH) {
+  const session = await getYoloSession();
+  if (!session) return null;
 
+  const scaleFactor = Math.min(640 / origW, 640 / origH);
+  const nw = Math.round(origW * scaleFactor);
+  const nh = Math.round(origH * scaleFactor);
+  const padX = Math.floor((640 - nw) / 2);
+  const padY = Math.floor((640 - nh) / 2);
+
+  if (!sharedYoloCanvas) {
+    sharedYoloCanvas = document.createElement('canvas');
+    sharedYoloCanvas.width = 640;
+    sharedYoloCanvas.height = 640;
+  }
+  const yCtx = sharedYoloCanvas.getContext('2d', { willReadFrequently: true });
+  yCtx.fillStyle = '#727272';
+  yCtx.fillRect(0, 0, 640, 640);
+  yCtx.drawImage(source, 0, 0, origW, origH, padX, padY, nw, nh);
+
+  const imgData = yCtx.getImageData(0, 0, 640, 640).data;
+  const ch640 = 640 * 640;
+  const tensorData = new Float32Array(3 * ch640);
+  const inv255 = 1.0 / 255.0;
+
+  for (let i = 0; i < ch640; i++) {
+    const idx = i * 4;
+    tensorData[i] = imgData[idx] * inv255;
+    tensorData[ch640 + i] = imgData[idx + 1] * inv255;
+    tensorData[2 * ch640 + i] = imgData[idx + 2] * inv255;
+  }
+
+  const inputTensor = new ort.Tensor('float32', tensorData, [1, 3, 640, 640]);
+  let rawOut = null;
+  let results = null;
   try {
-    if (manual) showToast('🔍 Detectando tablero con IA...');
-    const bounds = await detectBoardBounds(currentImage);
-
-    if (!bounds) {
-      if (manual) showToast('No se detectó un tablero claro en la foto.');
-      return;
+    const inputName = session.inputNames[0] || 'images';
+    const outputName = session.outputNames[0] || 'output0';
+    results = await session.run({ [inputName]: inputTensor });
+    rawOut = new Float32Array(results[outputName].data);
+  } finally {
+    inputTensor.dispose?.();
+    if (results) {
+      for (const k of Object.keys(results)) {
+        results[k]?.dispose?.();
+      }
     }
+  }
 
-    const rect = cropViewport.getBoundingClientRect();
-    const viewportPx = rect.width || 400;
-    const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
-    const drawW = currentImage.width * baseScale;
-    const drawH = currentImage.height * baseScale;
-    const drawLeft = (viewportPx - drawW) / 2;
-    const drawTop = (viewportPx - drawH) / 2;
+  let boardBox = null;
+  const pieces = [];
+  let rankOneDet = null;
+  const lmStarts = [];
+  const lmEnds = [];
 
-    const boardOnScreenW = (bounds.realXmax - bounds.realXmin) * baseScale;
-    const boardOnScreenH = (bounds.realYmax - bounds.realYmin) * baseScale;
+  const invScale = 1.0 / scaleFactor;
+  for (let i = 0; i < 300; i++) {
+    const base = i * 6;
+    const conf = rawOut[base + 4];
+    if (conf < 0.22) continue;
 
-    const targetScale = Math.min(Math.max((viewportPx * 0.90) / Math.max(boardOnScreenW, boardOnScreenH), 1.0), 4.0);
+    const x1 = (rawOut[base] - padX) * invScale;
+    const y1 = (rawOut[base + 1] - padY) * invScale;
+    const x2 = (rawOut[base + 2] - padX) * invScale;
+    const y2 = (rawOut[base + 3] - padY) * invScale;
+    const cls = Math.round(rawOut[base + 5]);
+    const entry = {
+      x1, y1, x2, y2,
+      cx: (x1 + x2) * 0.5,
+      cy: (y1 + y2) * 0.5,
+      conf,
+      cls,
+      name: YOLO_CLASSES[cls],
+    };
 
-    const boardCenterImgX = (bounds.realXmin + bounds.realXmax) / 2;
-    const boardCenterImgY = (bounds.realYmin + bounds.realYmax) / 2;
+    if (cls === 0 && (!boardBox || conf > boardBox.conf)) {
+      boardBox = entry;
+    } else if (cls >= 1 && cls <= 12) {
+      pieces.push(entry);
+    } else if (cls === 13 && (!rankOneDet || conf > rankOneDet.conf)) {
+      rankOneDet = entry;
+    } else if (cls === 14) {
+      lmStarts.push(entry);
+    } else if (cls === 15) {
+      lmEnds.push(entry);
+    }
+  }
+
+  return { boardBox, pieces, rankOneDet, lmStarts, lmEnds };
+}
+
+function fitTrapezoidCorners(boardBox, pieces, origW, origH) {
+  let { x1, y1, x2, y2 } = boardBox;
+  const bw = x2 - x1;
+  const bh = y2 - y1;
+
+  for (const p of pieces) {
+    if (
+      p.conf > 0.5 &&
+      p.cx >= x1 - 0.08 * bw &&
+      p.cx <= x2 + 0.08 * bw &&
+      p.cy >= y1 - 0.05 * bh &&
+      p.cy <= y2 + 0.05 * bh
+    ) {
+      if (p.y1 < y1) y1 = p.y1;
+      if (p.y2 > y2) y2 = p.y2;
+    }
+  }
+
+  let topLeftMin = x1, topRightMax = x2;
+  let botLeftMin = x1, botRightMax = x2;
+
+  for (const p of pieces) {
+    if (
+      p.conf > 0.5 &&
+      p.cy >= y1 &&
+      p.cy <= y2 &&
+      p.cx >= x1 - 0.08 * bw &&
+      p.cx <= x2 + 0.08 * bw
+    ) {
+      const relY = (p.cy - y1) / Math.max(1, y2 - y1);
+      if (relY < 0.35) {
+        if (p.x1 < topLeftMin) topLeftMin = p.x1;
+        if (p.x2 > topRightMax) topRightMax = p.x2;
+      } else if (relY > 0.65) {
+        if (p.x1 < botLeftMin) botLeftMin = p.x1;
+        if (p.x2 > botRightMax) botRightMax = p.x2;
+      }
+    }
+  }
+
+  return {
+    tl: { x: Math.max(0, topLeftMin), y: Math.max(0, y1) },
+    tr: { x: Math.min(origW, topRightMax), y: Math.max(0, y1) },
+    br: { x: Math.min(origW, botRightMax), y: Math.min(origH, y2) },
+    bl: { x: Math.max(0, botLeftMin), y: Math.min(origH, y2) },
+  };
+}
+
+function detectOrientationAndTurn(grid, rankOneDet, boardBox, lmEnds, pieces) {
+  let isFlipped = false;
+
+  if (rankOneDet && boardBox && rankOneDet.conf > 0.45) {
+    const boardCy = (boardBox.y1 + boardBox.y2) * 0.5;
+    isFlipped = rankOneDet.cy < boardCy;
+  } else {
+    let whiteTop = 0, whiteBot = 0;
+    let blackTop = 0, blackBot = 0;
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const p = grid[r * 8 + c];
+        if (!p) continue;
+        if (p === 'P') {
+          if (r < 4) whiteTop += 2;
+          else whiteBot += 2;
+        } else if (p === 'p') {
+          if (r < 4) blackTop += 2;
+          else blackBot += 2;
+        } else if (p === 'K' || p === 'R' || p === 'Q') {
+          if (r <= 1) whiteTop += 1;
+          else if (r >= 6) whiteBot += 1;
+        } else if (p === 'k' || p === 'r' || p === 'q') {
+          if (r <= 1) blackTop += 1;
+          else if (r >= 6) blackBot += 1;
+        }
+      }
+    }
+    const standardScore = blackTop + whiteBot;
+    const flippedScore = whiteTop + blackBot;
+    if (flippedScore > standardScore) {
+      isFlipped = true;
+    }
+  }
+
+  // Default turn to the player at the bottom of the diagram (White if normal, Black if flipped)
+  let turn = isFlipped ? 'b' : 'w';
+
+  if (lmEnds && lmEnds.length > 0 && pieces && pieces.length > 0) {
+    const bestEnd = lmEnds[0];
+    let bestPiece = null;
+    for (const p of pieces) {
+      if (p.cx >= bestEnd.x1 && p.cx <= bestEnd.x2 && p.cy >= bestEnd.y1 && p.cy <= bestEnd.y2) {
+        if (!bestPiece || p.conf > bestPiece.conf) bestPiece = p;
+      }
+    }
+    if (bestPiece) {
+      const isBlackPiece = bestPiece.cls >= 1 && bestPiece.cls <= 6;
+      turn = isBlackPiece ? 'w' : 'b';
+    }
+  }
+
+  return { isFlipped, turn };
+}
+
+function syncTurnButtonsUI() {
+  if (activeColor === 'b') {
+    turnBlack?.classList.add('active');
+    turnWhite?.classList.remove('active');
+  } else {
+    turnWhite?.classList.add('active');
+    turnBlack?.classList.remove('active');
+  }
+}
+
+function applyCornersToCropView(corners, zoomIn = false) {
+  if (!currentImage) return;
+  const rect = cropViewport?.getBoundingClientRect();
+  const viewportPx = (rect && rect.width) ? rect.width : 400;
+  const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
+  const drawW = currentImage.width * baseScale;
+  const drawH = currentImage.height * baseScale;
+  const drawLeft = (viewportPx - drawW) / 2;
+  const drawTop = (viewportPx - drawH) / 2;
+
+  const minX = Math.min(corners.tl.x, corners.bl.x);
+  const maxX = Math.max(corners.tr.x, corners.br.x);
+  const minY = Math.min(corners.tl.y, corners.tr.y);
+  const maxY = Math.max(corners.bl.y, corners.br.y);
+
+  if (zoomIn) {
+    const boardOnScreenW = (maxX - minX) * baseScale;
+    const boardOnScreenH = (maxY - minY) * baseScale;
+    const targetScale = Math.min(Math.max((viewportPx * 0.90) / Math.max(boardOnScreenW, boardOnScreenH, 1), 1.0), 4.0);
+    const boardCenterImgX = (minX + maxX) / 2;
+    const boardCenterImgY = (minY + maxY) / 2;
     const screenBoardCenterX = drawLeft + boardCenterImgX * baseScale;
     const screenBoardCenterY = drawTop + boardCenterImgY * baseScale;
 
@@ -1136,22 +1442,68 @@ async function autoDetectChessboardWithAI(manual = false) {
     offsetY = (viewportPx / 2 - screenBoardCenterY) * targetScale;
     rotation = 0;
 
-    const fittedW = boardOnScreenW * targetScale;
-    const fittedH = boardOnScreenH * targetScale;
-    const leftPx = (viewportPx - fittedW) / 2;
-    const topPx = (viewportPx - fittedH) / 2;
-
-    const leftPct = Math.max(0, Math.min(95, (leftPx / viewportPx) * 100));
-    const rightPct = Math.max(leftPct + 5, Math.min(100, ((leftPx + fittedW) / viewportPx) * 100));
-    const topPct = Math.max(0, Math.min(95, (topPx / viewportPx) * 100));
-    const bottomPct = Math.max(topPct + 5, Math.min(100, ((topPx + fittedH) / viewportPx) * 100));
-
-    gridCorners = {
-      tl: { x: leftPct, y: topPct },
-      tr: { x: rightPct, y: topPct },
-      br: { x: rightPct, y: bottomPct },
-      bl: { x: leftPct, y: bottomPct }
+    const mapPt = (pt) => {
+      const sx = drawLeft + pt.x * baseScale;
+      const sy = drawTop + pt.y * baseScale;
+      const vx = (sx - viewportPx / 2) * targetScale + viewportPx / 2 + offsetX;
+      const vy = (sy - viewportPx / 2) * targetScale + viewportPx / 2 + offsetY;
+      return {
+        x: Math.max(1, Math.min(99, (vx / viewportPx) * 100)),
+        y: Math.max(1, Math.min(99, (vy / viewportPx) * 100)),
+      };
     };
+    gridCorners = {
+      tl: mapPt(corners.tl),
+      tr: mapPt(corners.tr),
+      br: mapPt(corners.br),
+      bl: mapPt(corners.bl),
+    };
+  } else {
+    scale = 1.0;
+    offsetX = 0;
+    offsetY = 0;
+    rotation = 0;
+    const mapPt = (pt) => ({
+      x: Math.max(1, Math.min(99, ((drawLeft + pt.x * baseScale) / viewportPx) * 100)),
+      y: Math.max(1, Math.min(99, ((drawTop + pt.y * baseScale) / viewportPx) * 100)),
+    });
+    gridCorners = {
+      tl: mapPt(corners.tl),
+      tr: mapPt(corners.tr),
+      br: mapPt(corners.br),
+      bl: mapPt(corners.bl),
+    };
+  }
+}
+
+async function autoDetectChessboardWithAI(manual = false) {
+  if (!currentImage) return;
+
+  try {
+    if (manual) showToast('🔍 Detectando tablero con IA...');
+
+    const yoloRes = await runYolo26OnSource(currentImage, currentImage.width, currentImage.height);
+    if (yoloRes && yoloRes.boardBox) {
+      const corners = fitTrapezoidCorners(yoloRes.boardBox, yoloRes.pieces, currentImage.width, currentImage.height);
+      applyCornersToCropView(corners, true);
+      renderPerspectiveGrid();
+      renderCanvas();
+      showToast('✨ Tablero y perspectiva encuadrados con IA', 2500);
+      return;
+    }
+
+    const bounds = await detectBoardBounds(currentImage);
+    if (!bounds) {
+      if (manual) showToast('No se detectó un tablero claro en la foto.');
+      return;
+    }
+
+    applyCornersToCropView({
+      tl: { x: bounds.realXmin, y: bounds.realYmin },
+      tr: { x: bounds.realXmax, y: bounds.realYmin },
+      br: { x: bounds.realXmax, y: bounds.realYmax },
+      bl: { x: bounds.realXmin, y: bounds.realYmax },
+    }, true);
 
     renderPerspectiveGrid();
     renderCanvas();
@@ -1166,7 +1518,7 @@ btnAutoDetect?.addEventListener('click', () => autoDetectChessboardWithAI(true))
 
 /**
  * -------------------------------------------------------------
- * END-TO-END PIPELINE: IMAGE -> AUTO-CROP -> 64 TILES -> RESULT
+ * END-TO-END PIPELINE: IMAGE -> YOLO26n + HYBRID ENSEMBLE -> RESULT
  * -------------------------------------------------------------
  */
 async function processImageDirectlyToResult() {
@@ -1175,10 +1527,71 @@ async function processImageDirectlyToResult() {
   try {
     showLoading('Reconociendo posición con IA...');
 
-    // 1. Detect board location with Periodic Grid + U-Net hybrid detector
+    // 1. Primary Pass: YOLO26n 2D-Chess-OCR (detects board, pieces, orientation & turn in 1 pass)
+    const yoloRes = await runYolo26OnSource(currentImage, currentImage.width, currentImage.height);
+
+    if (yoloRes && yoloRes.boardBox && yoloRes.pieces.length >= 2) {
+      const corners = fitTrapezoidCorners(yoloRes.boardBox, yoloRes.pieces, currentImage.width, currentImage.height);
+      applyCornersToCropView(corners, false);
+
+      const H = getHomographyFromUnitSquare(corners.tl, corners.tr, corners.br, corners.bl);
+      const Hinv = H ? invert3x3(H) : null;
+
+      if (Hinv) {
+        const grid = Array(64).fill(null);
+        const gridConf = Array(64).fill(0);
+        let matchedCount = 0;
+
+        for (const p of yoloRes.pieces) {
+          const u = Hinv[0] * p.cx + Hinv[1] * p.cy + Hinv[2];
+          const v = Hinv[3] * p.cx + Hinv[4] * p.cy + Hinv[5];
+          const w = Hinv[6] * p.cx + Hinv[7] * p.cy + Hinv[8];
+          const normU = u / w;
+          const normV = v / w;
+
+          if (normU >= -0.04 && normU <= 1.04 && normV >= -0.04 && normV <= 1.04) {
+            const col = Math.min(7, Math.max(0, Math.floor(normU * 8)));
+            const row = Math.min(7, Math.max(0, Math.floor(normV * 8)));
+            const idx = row * 8 + col;
+            if (p.conf > gridConf[idx]) {
+              if (!grid[idx]) matchedCount++;
+              grid[idx] = p.name;
+              gridConf[idx] = p.conf;
+            }
+          }
+        }
+
+        if (matchedCount >= 2) {
+          const { isFlipped, turn } = detectOrientationAndTurn(
+            grid,
+            yoloRes.rankOneDet,
+            yoloRes.boardBox,
+            yoloRes.lmEnds,
+            yoloRes.pieces
+          );
+          currentSquares = isFlipped ? [...grid].reverse() : grid;
+          isBoardViewFlipped = isFlipped;
+          activeColor = turn;
+          syncTurnButtonsUI();
+
+          renderBoard();
+          updateFenDisplay();
+          saveToHistory(getFenString());
+          showScreen('result');
+          showToast(
+            isFlipped
+              ? '✨ Posición reconocida (Vista desde Negras)'
+              : '✨ Posición reconocida al instante con IA',
+            2800
+          );
+          return;
+        }
+      }
+    }
+
+    // 2. Fallback: Periodic Grid + U-Net segmentation + Tile Classifier
     const bounds = await detectBoardBounds(currentImage);
 
-    // If neither detector found a clear board (e.g. extreme tilt or non-chess photo)
     if (!bounds) {
       hideLoading();
       showToast('⚠️ No se reconoció el tablero automáticamente. Ajusta las esquinas.', 4000);
@@ -1196,48 +1609,27 @@ async function processImageDirectlyToResult() {
       return;
     }
 
-    // Pre-configure manual crop coordinates in case user later opens manual crop
-    const viewportPx = 500;
-    const baseScale = Math.min(viewportPx / currentImage.width, viewportPx / currentImage.height);
-    const drawW = currentImage.width * baseScale;
-    const drawH = currentImage.height * baseScale;
-    const drawLeft = (viewportPx - drawW) / 2;
-    const drawTop = (viewportPx - drawH) / 2;
+    applyCornersToCropView({
+      tl: { x: bounds.realXmin, y: bounds.realYmin },
+      tr: { x: bounds.realXmax, y: bounds.realYmin },
+      br: { x: bounds.realXmax, y: bounds.realYmax },
+      bl: { x: bounds.realXmin, y: bounds.realYmax },
+    }, false);
 
-    const screenLeft = drawLeft + bounds.realXmin * baseScale;
-    const screenRight = drawLeft + bounds.realXmax * baseScale;
-    const screenTop = drawTop + bounds.realYmin * baseScale;
-    const screenBottom = drawTop + bounds.realYmax * baseScale;
-
-    const leftPct = Math.max(0, Math.min(95, (screenLeft / viewportPx) * 100));
-    const rightPct = Math.max(leftPct + 5, Math.min(100, (screenRight / viewportPx) * 100));
-    const topPct = Math.max(0, Math.min(95, (screenTop / viewportPx) * 100));
-    const bottomPct = Math.max(topPct + 5, Math.min(100, (screenBottom / viewportPx) * 100));
-
-    gridCorners = {
-      tl: { x: leftPct, y: topPct },
-      tr: { x: rightPct, y: topPct },
-      br: { x: rightPct, y: bottomPct },
-      bl: { x: leftPct, y: bottomPct }
-    };
-
-    // Draw detected board sub-region stretched to 256x256
     const boardCanvas = document.createElement('canvas');
     boardCanvas.width = 256;
     boardCanvas.height = 256;
-    const bCtx = boardCanvas.getContext('2d');
+    const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
     bCtx.drawImage(
       currentImage,
       bounds.realXmin, bounds.realYmin, bounds.realXmax - bounds.realXmin, bounds.realYmax - bounds.realYmin,
       0, 0, 256, 256
     );
 
-    // 2. Classify pieces and display result directly
     const recognized = await runTileInferenceOnBoardCanvas(boardCanvas, false);
     if (recognized) {
       showToast('✨ Posición reconocida al instante con IA', 2500);
     } else {
-      // Detected region did not contain a valid chess position
       hideLoading();
       showToast('⚠️ No se reconoció el tablero con claridad. Ajusta las esquinas.', 4000);
       showScreen('crop');
@@ -1260,11 +1652,11 @@ async function processImageDirectlyToResult() {
   }
 }
 
-async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false) {
+async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false, warpedYoloInfo = null) {
   const session = await getInferenceSession();
 
   // 1. Extract Grayscale [0, 1] for 256x256
-  const bCtx = boardCanvas.getContext('2d');
+  const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
   const imgData = bCtx.getImageData(0, 0, 256, 256);
   const boardGray = new Float32Array(256 * 256);
   for (let i = 0; i < boardGray.length; i++) {
@@ -1289,7 +1681,7 @@ async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false) {
     }
   }
 
-  // 3. Run ONNX Inference with tensor memory disposal
+  // 3. Run ONNX Tile Inference with tensor memory disposal
   const inputTensor = new ort.Tensor('float32', tilesInput, [64, TILE_PX * TILE_PX]);
   let results = null;
   let probs = null;
@@ -1301,8 +1693,9 @@ async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false) {
     results?.probs?.dispose?.();
   }
 
-  // 4. Parse classifications
-  const recognizedGrid = [];
+  // 4. Parse tile classifications
+  const tileGrid = [];
+  const tileConf = [];
   let pieceCount = 0;
   for (let i = 0; i < 64; i++) {
     let maxProb = -1;
@@ -1316,7 +1709,61 @@ async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false) {
     }
     const char = LABELS[maxClass];
     if (char !== '1') pieceCount++;
-    recognizedGrid.push(char === '1' ? null : char);
+    tileGrid.push(char === '1' ? null : char);
+    tileConf.push(maxProb);
+  }
+
+  // 5. Hybrid Ensemble with YOLO26n if warpedYoloInfo is provided (Manual Crop mode)
+  let recognizedGrid = tileGrid;
+  let rankOneDet = null;
+  let boardBox = null;
+  let lmEnds = [];
+  let yoloPieces = [];
+
+  if (warpedYoloInfo && warpedYoloInfo.canvas) {
+    const yoloRes = await runYolo26OnSource(warpedYoloInfo.canvas, warpedYoloInfo.canvas.width, warpedYoloInfo.canvas.height);
+    if (yoloRes && yoloRes.pieces.length >= 1) {
+      rankOneDet = yoloRes.rankOneDet;
+      boardBox = yoloRes.boardBox;
+      lmEnds = yoloRes.lmEnds;
+      yoloPieces = yoloRes.pieces;
+
+      const { marginPx, innerSz } = warpedYoloInfo;
+      const yoloGrid = Array(64).fill(null);
+      const yoloConf = Array(64).fill(0);
+
+      for (const p of yoloRes.pieces) {
+        const u = (p.cx - marginPx) / innerSz;
+        const v = (p.cy - marginPx) / innerSz;
+        if (u >= -0.05 && u <= 1.05 && v >= -0.05 && v <= 1.05) {
+          const col = Math.min(7, Math.max(0, Math.floor(u * 8)));
+          const row = Math.min(7, Math.max(0, Math.floor(v * 8)));
+          const idx = row * 8 + col;
+          if (p.conf > yoloConf[idx]) {
+            yoloGrid[idx] = p.name;
+            yoloConf[idx] = p.conf;
+          }
+        }
+      }
+
+      // Combine YOLO26n + Tile CNN ensemble
+      const ensembleGrid = Array(64).fill(null);
+      pieceCount = 0;
+      for (let i = 0; i < 64; i++) {
+        if (yoloGrid[i]) {
+          // If YOLO is weak (<0.32) and Tile CNN is very confident (>0.85) on a different piece, trust Tile CNN
+          if (yoloConf[i] < 0.32 && tileGrid[i] && tileConf[i] > 0.85) {
+            ensembleGrid[i] = tileGrid[i];
+          } else {
+            ensembleGrid[i] = yoloGrid[i];
+          }
+        } else if (tileGrid[i] && tileConf[i] >= 0.72) {
+          ensembleGrid[i] = tileGrid[i];
+        }
+        if (ensembleGrid[i]) pieceCount++;
+      }
+      recognizedGrid = ensembleGrid;
+    }
   }
 
   // In auto mode, if virtually no pieces were recognized, treat as unverified
@@ -1324,10 +1771,20 @@ async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false) {
     return false;
   }
 
-  // 5. Check orientation (180° flip if necessary)
-  currentSquares = autoOrientBoard(recognizedGrid);
+  // 6. Check orientation (180° flip if necessary) & turn
+  const { isFlipped, turn } = detectOrientationAndTurn(
+    recognizedGrid,
+    rankOneDet,
+    boardBox,
+    lmEnds,
+    yoloPieces
+  );
+  currentSquares = isFlipped ? [...recognizedGrid].reverse() : recognizedGrid;
+  isBoardViewFlipped = isFlipped;
+  activeColor = turn;
+  syncTurnButtonsUI();
 
-  // 6. Update UI & History
+  // 7. Update UI & History
   renderBoard();
   updateFenDisplay();
   saveToHistory(getFenString());
@@ -1359,8 +1816,9 @@ btnProcessScan?.addEventListener('click', async () => {
     if (!H) throw new Error('Las 4 esquinas no forman una cuadrícula válida.');
 
     const boardCanvas = extractWarpedBoard(cropCanvas, H);
+    const warpedYoloInfo = extractWarpedBoardWithMargin(cropCanvas, H, 640, 32);
 
-    await runTileInferenceOnBoardCanvas(boardCanvas, true);
+    await runTileInferenceOnBoardCanvas(boardCanvas, true, warpedYoloInfo);
     showToast('✨ Posición actualizada con el nuevo encuadre', 2500);
   } catch (err) {
     console.error('Classification error:', err);
@@ -1369,23 +1827,6 @@ btnProcessScan?.addEventListener('click', async () => {
     hideLoading();
   }
 });
-
-function autoOrientBoard(grid) {
-  let whitePawnsRank1to4 = 0;
-  let blackPawnsRank5to8 = 0;
-  for (let rank = 0; rank < 8; rank++) {
-    for (let file = 0; file < 8; file++) {
-      const piece = grid[rank * 8 + file];
-      if (piece === 'P' && rank < 4) whitePawnsRank1to4++;
-      if (piece === 'p' && rank >= 4) blackPawnsRank5to8++;
-    }
-  }
-  if (whitePawnsRank1to4 > 2 || blackPawnsRank5to8 > 2) {
-    // Flip 180 degrees
-    return [...grid].reverse();
-  }
-  return grid;
-}
 
 /**
  * -------------------------------------------------------------
@@ -1400,9 +1841,15 @@ const PIECE_NAMES = {
 function renderBoard() {
   const { invalidSquares, inCheckSquare } = validateCurrentPosition();
 
+  if (viewSideLabel) {
+    viewSideLabel.textContent = isBoardViewFlipped ? 'Negras' : 'Blancas';
+  }
+
   chessboard.innerHTML = '';
-  for (let rank = 0; rank < 8; rank++) {
-    for (let file = 0; file < 8; file++) {
+  for (let vRank = 0; vRank < 8; vRank++) {
+    for (let vFile = 0; vFile < 8; vFile++) {
+      const rank = isBoardViewFlipped ? 7 - vRank : vRank;
+      const file = isBoardViewFlipped ? 7 - vFile : vFile;
       const idx = rank * 8 + file;
       const isLight = (rank + file) % 2 === 0;
       const squareEl = document.createElement('div');
@@ -1413,6 +1860,22 @@ function renderBoard() {
 
       squareEl.className = classes;
       squareEl.dataset.index = idx;
+
+      // Algebraic rank label on left column
+      if (vFile === 0) {
+        const rankSpan = document.createElement('span');
+        rankSpan.className = 'coord-rank';
+        rankSpan.textContent = String(8 - rank);
+        squareEl.appendChild(rankSpan);
+      }
+
+      // Algebraic file label on bottom row
+      if (vRank === 7) {
+        const fileSpan = document.createElement('span');
+        fileSpan.className = 'coord-file';
+        fileSpan.textContent = String.fromCharCode('a'.charCodeAt(0) + file);
+        squareEl.appendChild(fileSpan);
+      }
 
       const piece = currentSquares[idx];
       if (piece && PIECE_NAMES[piece]) {
@@ -1427,6 +1890,24 @@ function renderBoard() {
     }
   }
 }
+
+btnFlipView?.addEventListener('click', () => {
+  isBoardViewFlipped = !isBoardViewFlipped;
+  renderBoard();
+  showToast(
+    isBoardViewFlipped ? '🔄 Vista desde el lado de Negras' : '🔄 Vista desde el lado de Blancas',
+    1800
+  );
+});
+
+btnInvertBoard?.addEventListener('click', () => {
+  currentSquares.reverse();
+  isBoardViewFlipped = !isBoardViewFlipped;
+  renderBoard();
+  updateFenDisplay();
+  saveToHistory(getFenString());
+  showToast('↕️ Filas del tablero invertidas (180°)', 2000);
+});
 
 /**
  * -------------------------------------------------------------
@@ -1774,6 +2255,8 @@ function loadFenIntoBoard(fen) {
   const parts = fen.split(' ');
   const rows = parts[0].split('/');
   activeColor = parts[1] || 'w';
+  isBoardViewFlipped = false;
+  syncTurnButtonsUI();
 
   currentSquares = Array(64).fill(null);
   for (let r = 0; r < 8; r++) {
