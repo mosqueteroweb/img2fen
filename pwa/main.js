@@ -157,6 +157,12 @@ const turnWhite = document.getElementById('turn-white');
 const turnBlack = document.getElementById('turn-black');
 const btnProcessScan = document.getElementById('btn-process-scan');
 
+// Engine Mode Selection: 'auto' | 'books' | 'screens'
+let currentEngineMode = 'auto';
+const engineAuto = document.getElementById('engine-auto');
+const engineBooks = document.getElementById('engine-books');
+const engineScreens = document.getElementById('engine-screens');
+
 const cropViewport = document.getElementById('crop-viewport');
 const cropCanvas = document.getElementById('crop-canvas');
 const cropCtx = cropCanvas.getContext('2d');
@@ -194,6 +200,52 @@ const btnCancelModal = document.getElementById('btn-cancel-modal');
 
 const loadingOverlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
+
+function setEngineMode(mode) {
+  currentEngineMode = mode;
+  [engineAuto, engineBooks, engineScreens].forEach((btn) => {
+    if (btn) btn.classList.remove('active');
+  });
+  if (mode === 'books' && engineBooks) engineBooks.classList.add('active');
+  else if (mode === 'screens' && engineScreens) engineScreens.classList.add('active');
+  else if (engineAuto) engineAuto.classList.add('active');
+
+  const names = {
+    auto: '🤖 Modo Auto (Híbrido Inteligente)',
+    books: '📖 Modo Libros y Diagramas (Fenshot)',
+    screens: '💻 Modo Pantallas y Fotos (YOLO26)',
+  };
+  showToast(names[mode] || mode, 2000);
+}
+
+engineAuto?.addEventListener('click', () => setEngineMode('auto'));
+engineBooks?.addEventListener('click', () => setEngineMode('books'));
+engineScreens?.addEventListener('click', () => setEngineMode('screens'));
+
+function detectIsGrayscaleOrBook(source) {
+  try {
+    const testCanvas = document.createElement('canvas');
+    testCanvas.width = 64;
+    testCanvas.height = 64;
+    const ctx = testCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, 64, 64);
+    const data = ctx.getImageData(0, 0, 64, 64).data;
+    let totalDiff = 0;
+    const count = 64 * 64;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const maxD = Math.max(Math.abs(r - g), Math.abs(r - b), Math.abs(g - b));
+      totalDiff += maxD;
+    }
+    const avgDiff = totalDiff / count;
+    // An average color difference between R, G, B channels < 14 indicates monochrome / book diagram
+    return avgDiff < 14.0;
+  } catch (e) {
+    return false;
+  }
+}
 
 /**
  * -------------------------------------------------------------
@@ -1351,35 +1403,51 @@ function fitTrapezoidCorners(boardBox, pieces, origW, origH) {
 function detectOrientationAndTurn(grid, rankOneDet, boardBox, lmEnds, pieces) {
   let isFlipped = false;
 
+  // 1. Text marker "1" (rank_one_id) if detected
   if (rankOneDet && boardBox && rankOneDet.conf > 0.45) {
     const boardCy = (boardBox.y1 + boardBox.y2) * 0.5;
     isFlipped = rankOneDet.cy < boardCy;
   } else {
-    let whiteTop = 0, whiteBot = 0;
-    let blackTop = 0, blackBot = 0;
+    // 2. Pawn advancement direction (universal law of chess)
+    // White pawns start on rank 2 and march towards rank 8; Black pawns march towards rank 1.
+    const whitePawnRanks = [];
+    const blackPawnRanks = [];
     for (let r = 0; r < 8; r++) {
+      const rankNum = 8 - r; // r=0 is visual rank 8, r=7 is visual rank 1
       for (let c = 0; c < 8; c++) {
         const p = grid[r * 8 + c];
-        if (!p) continue;
-        if (p === 'P') {
-          if (r < 4) whiteTop += 2;
-          else whiteBot += 2;
-        } else if (p === 'p') {
-          if (r < 4) blackTop += 2;
-          else blackBot += 2;
-        } else if (p === 'K' || p === 'R' || p === 'Q') {
-          if (r <= 1) whiteTop += 1;
-          else if (r >= 6) whiteBot += 1;
-        } else if (p === 'k' || p === 'r' || p === 'q') {
-          if (r <= 1) blackTop += 1;
-          else if (r >= 6) blackBot += 1;
-        }
+        if (p === 'P') whitePawnRanks.push(rankNum);
+        else if (p === 'p') blackPawnRanks.push(rankNum);
       }
     }
-    const standardScore = blackTop + whiteBot;
-    const flippedScore = whiteTop + blackBot;
-    if (flippedScore > standardScore) {
-      isFlipped = true;
+
+    if (whitePawnRanks.length > 0 && blackPawnRanks.length > 0) {
+      const avgW = whitePawnRanks.reduce((a, b) => a + b, 0) / whitePawnRanks.length;
+      const avgB = blackPawnRanks.reduce((a, b) => a + b, 0) / blackPawnRanks.length;
+      // If White pawns sit higher on average than Black pawns, board is viewed from Black's side
+      if (avgW > avgB) {
+        isFlipped = true;
+      }
+    } else {
+      // 3. Fallback: Major pieces heuristic
+      let whiteTop = 0, whiteBot = 0;
+      let blackTop = 0, blackBot = 0;
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const p = grid[r * 8 + c];
+          if (!p) continue;
+          if (p === 'K' || p === 'R' || p === 'Q') {
+            if (r <= 1) whiteTop += 1;
+            else if (r >= 6) whiteBot += 1;
+          } else if (p === 'k' || p === 'r' || p === 'q') {
+            if (r <= 1) blackTop += 1;
+            else if (r >= 6) blackBot += 1;
+          }
+        }
+      }
+      if ((whiteTop + blackBot) > (blackTop + whiteBot)) {
+        isFlipped = true;
+      }
     }
   }
 
@@ -1527,7 +1595,50 @@ async function processImageDirectlyToResult() {
   try {
     showLoading('Reconociendo posición con IA...');
 
-    // 1. Primary Pass: YOLO26n 2D-Chess-OCR (detects board, pieces, orientation & turn in 1 pass)
+    const isBook = (currentEngineMode === 'books') || (currentEngineMode === 'auto' && detectIsGrayscaleOrBook(currentImage));
+
+    // For book diagrams / monochrome prints, prioritize Fenshot tile CNN (specialized in hatched/striped squares)
+    if (isBook) {
+      let bounds = await detectBoardBounds(currentImage);
+      if (!bounds) {
+        const yoloRes = await runYolo26OnSource(currentImage, currentImage.width, currentImage.height);
+        if (yoloRes && yoloRes.boardBox) {
+          bounds = {
+            realXmin: yoloRes.boardBox.x1,
+            realYmin: yoloRes.boardBox.y1,
+            realXmax: yoloRes.boardBox.x2,
+            realYmax: yoloRes.boardBox.y2,
+          };
+        }
+      }
+
+      if (bounds) {
+        applyCornersToCropView({
+          tl: { x: bounds.realXmin, y: bounds.realYmin },
+          tr: { x: bounds.realXmax, y: bounds.realYmin },
+          br: { x: bounds.realXmax, y: bounds.realYmax },
+          bl: { x: bounds.realXmin, y: bounds.realYmax },
+        }, false);
+
+        const boardCanvas = document.createElement('canvas');
+        boardCanvas.width = 256;
+        boardCanvas.height = 256;
+        const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
+        bCtx.drawImage(
+          currentImage,
+          bounds.realXmin, bounds.realYmin, bounds.realXmax - bounds.realXmin, bounds.realYmax - bounds.realYmin,
+          0, 0, 256, 256
+        );
+
+        const recognized = await runTileInferenceOnBoardCanvas(boardCanvas, false, null, true);
+        if (recognized) {
+          showToast('📖 Diagrama de libro reconocido con Fenshot', 2800);
+          return;
+        }
+      }
+    }
+
+    // 1. Primary Pass for Photos & Screens: YOLO26n 2D-Chess-OCR (detects board, pieces, orientation & turn in 1 pass)
     const yoloRes = await runYolo26OnSource(currentImage, currentImage.width, currentImage.height);
 
     if (yoloRes && yoloRes.boardBox && yoloRes.pieces.length >= 2) {
@@ -1652,7 +1763,7 @@ async function processImageDirectlyToResult() {
   }
 }
 
-async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false, warpedYoloInfo = null) {
+async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false, warpedYoloInfo = null, forceFenshot = false) {
   const session = await getInferenceSession();
 
   // 1. Extract Grayscale [0, 1] for 256x256
@@ -1720,7 +1831,10 @@ async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false, warp
   let lmEnds = [];
   let yoloPieces = [];
 
-  if (warpedYoloInfo && warpedYoloInfo.canvas) {
+  const isMonochrome = forceFenshot || (currentEngineMode === 'books') || (currentEngineMode === 'auto' && detectIsGrayscaleOrBook(boardCanvas));
+  const meanTileConf = tileConf.reduce((a, b) => a + b, 0) / 64;
+
+  if (!isMonochrome && currentEngineMode !== 'books' && warpedYoloInfo && warpedYoloInfo.canvas) {
     const yoloRes = await runYolo26OnSource(warpedYoloInfo.canvas, warpedYoloInfo.canvas.width, warpedYoloInfo.canvas.height);
     if (yoloRes && yoloRes.pieces.length >= 1) {
       rankOneDet = yoloRes.rankOneDet;
@@ -1746,18 +1860,15 @@ async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false, warp
         }
       }
 
-      // Combine YOLO26n + Tile CNN ensemble
+      // If Fenshot mean confidence is high on standard rectified board, prioritize Fenshot
       const ensembleGrid = Array(64).fill(null);
       pieceCount = 0;
       for (let i = 0; i < 64; i++) {
-        if (yoloGrid[i]) {
-          // If YOLO is weak (<0.32) and Tile CNN is very confident (>0.85) on a different piece, trust Tile CNN
-          if (yoloConf[i] < 0.32 && tileGrid[i] && tileConf[i] > 0.85) {
-            ensembleGrid[i] = tileGrid[i];
-          } else {
-            ensembleGrid[i] = yoloGrid[i];
-          }
-        } else if (tileGrid[i] && tileConf[i] >= 0.72) {
+        if (meanTileConf > 0.86 && tileGrid[i] && tileConf[i] > 0.80) {
+          ensembleGrid[i] = tileGrid[i];
+        } else if (yoloGrid[i] && yoloConf[i] >= 0.40) {
+          ensembleGrid[i] = yoloGrid[i];
+        } else if (tileGrid[i] && tileConf[i] >= 0.65) {
           ensembleGrid[i] = tileGrid[i];
         }
         if (ensembleGrid[i]) pieceCount++;

@@ -535,6 +535,54 @@ body {
   color: #ffcc80;
 }
 
+/* Engine Mode Selector */
+.engine-selector-card {
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.engine-selector-card .label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.engine-pills {
+  display: flex;
+  gap: 6px;
+}
+
+.engine-pill {
+  background-color: var(--surface-variant);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.engine-pill:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.engine-pill.active {
+  background-color: var(--primary-color);
+  border-color: var(--accent-color);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
+}
+
 .turn-selector-card {
   background-color: var(--surface-color);
   border: 1px solid var(--border-color);
