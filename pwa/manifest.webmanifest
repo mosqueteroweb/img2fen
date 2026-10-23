@@ -1,6 +1,6 @@
 {
-  "name": "Img2FEN Pro - Diagramas a FEN de Ajedrez",
-  "short_name": "Img2FEN Pro",
+  "name": "Img2FEN - Diagramas a FEN de Ajedrez",
+  "short_name": "Img2FEN",
   "description": "Convierte fotos y diagramas de ajedrez (también girados o en perspectiva) a FEN de forma 100% offline y privada.",
   "start_url": "./",
   "scope": "./",

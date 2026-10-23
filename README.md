@@ -10,7 +10,7 @@
 
 👉 **Probar en vivo:** **https://mosqueteroweb.github.io/img2fen/**
 
-🧪 **Nueva versión Pro (reconocimiento mejorado, fotos giradas y en perspectiva):** **https://mosqueteroweb.github.io/img2fen/pro/** — código en [`pwa/public/pro`](pwa/public/pro), comparativa en [`BENCHMARK.md`](pwa/public/pro/BENCHMARK.md).
+🆕 **v3.0.0:** nuevo motor de reconocimiento que lee fotos de pantallas y libros **giradas y en perspectiva**. Comparativa con la v2.7.0 en [`pwa/BENCHMARK.md`](pwa/BENCHMARK.md).
 
 ---
 
@@ -19,13 +19,16 @@
 ### 📸 1. Captura Rápida, Galería e Integración con "Compartir" de Android
 - **Cámara y Galería**: Toma una foto directa o selecciona cualquier captura desde el almacenamiento local.
 - **Web Share Target (Nativo en Android)**: Comparte fotos directamente desde WhatsApp, Twitter/X, el navegador o tu galería hacia Img2FEN desde el menú *"Compartir"* de tu teléfono.
-- **Recorte Inteligente Híbrido**:
-  - **Detector Periódico y Bimodal de Tableros**: Detecta instantáneamente (< 5ms) la cuadrícula 8×8 y los dos colores dominantes del tablero, descartando barras de evaluación, encabezados y relojes con precisión al píxel.
-  - **Respaldo con IA (U-Net)**: Segmentación neuronal para fotografías de tableros físicos en ángulo o perspectiva.
-- **Encuadre Manual Perspectivo**: Tiradores independientes en las 4 esquinas con lupa de aumento para ajustes milimétricos.
+- **Localización precisa del tablero**:
+  - **Retícula de esquinas en X**: detecta los cruces de casillas y ajusta una homografía, por lo que funciona con tableros **girados y en perspectiva**.
+  - **Refinamiento subpíxel**: las 4 esquinas se ajustan alineando las 18 líneas de la cuadrícula y verificando el patrón de damero (U-Net y YOLO aportan candidatos).
+  - **Rotación automática** (0°, 90°, 180°, 270°) hasta dejar las piezas «de pie».
+- **Encuadre Manual Perspectivo**: Tiradores independientes en las 4 esquinas; el reanálisis usa la foto a resolución completa y afina las esquinas solo.
 
 ### 🧠 2. Clasificación 100% Local (Offline y Privada)
-- Modelo convolucional de clasificación de casillas `chess-tiles-v2.onnx` ejecutado mediante **ONNX Runtime WebAssembly**.
+- Modelo de casillas `chess-tiles-v2.onnx` con *test-time augmentation*, **fusionado** con el detector YOLO26n sobre el tablero rectificado, todo con **ONNX Runtime WebAssembly**.
+- Decodificación con reglas (un rey por bando, sin peones en 1.ª/8.ª, máx. 8 peones) y casillas dudosas marcadas en amarillo.
+- Orientación (vista desde blancas o negras) por el marcador «1» y por la distribución típica de las piezas.
 - Sin servidores externos ni APIs: tus fotos nunca salen de tu dispositivo y funciona sin internet.
 
 ### 🛡️ 3. Chequeador de Posiciones FEN y Reglas FIDE en Tiempo Real
@@ -50,7 +53,7 @@
 ## 🛠️ Stack Tecnológico
 
 - **Frontend**: HTML5 Semántico, CSS3 Moderno (Glassmorphism, CSS Grid, animaciones fluidas), JavaScript ES Modules.
-- **Bundler / PWA Engine**: [Vite](https://vitejs.dev/) + [`vite-plugin-pwa`](https://vite-pwa-org.netlify.app/) (Workbox).
+- **PWA**: ficheros estáticos sin compilación + service worker propio (offline completo y Web Share Target).
 - **Motor de Inferencia ML**: [Microsoft ONNX Runtime Web](https://www.npmjs.com/package/onnxruntime-web) (WASM SIMD multihilo).
 - **Reglas y Validación**: [`chess.js`](https://github.com/jhlywa/chess.js) (BSD-2-Clause) + Validador semántico in-house.
 - **Despliegue Continuo**: GitHub Actions + GitHub Pages.
@@ -60,19 +63,12 @@
 ## 💻 Desarrollo Local
 
 ```bash
-# 1. Clonar el repositorio
 git clone https://github.com/mosqueteroweb/img2fen.git
 cd img2fen/pwa
-
-# 2. Instalar dependencias
-npm install
-
-# 3. Iniciar servidor de desarrollo
-npm run dev
-
-# 4. Compilar para producción
-npm run build
+python3 -m http.server 8080   # abre http://localhost:8080
 ```
+
+No hay paso de compilación: GitHub Actions publica la carpeta `pwa/` tal cual en GitHub Pages.
 
 ---
 

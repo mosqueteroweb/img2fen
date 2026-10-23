@@ -1201,3 +1201,20 @@ body {
 }
 
 
+
+/* ---------- v3: casillas dudosas ---------- */
+.square.uncertain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 3px rgba(255, 204, 0, 0.9);
+  pointer-events: none;
+  z-index: 2;
+}
+.uncertain-hint { color: #f5c542; }
+.uncertain-hint.hidden { display: none; }
+.validator-details.hidden { display: none; }
+@media (max-width: 768px) {
+  .crop-controls { flex-wrap: wrap; gap: 10px; }
+  .quick-fit-controls, .zoom-controls { flex-wrap: wrap; }
+}

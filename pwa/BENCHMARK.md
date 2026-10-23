@@ -1,10 +1,10 @@
-# Comparativa de reconocimiento: Img2FEN (v2.7.0) vs Img2FEN Pro (v3.0.0)
+# Comparativa de reconocimiento: Img2FEN v2.7.0 vs v3.0.0
 
 Ambas versiones se ejecutaron en Chromium sin interfaz, cargando la imagen igual que lo haría un usuario (botón «Abrir imagen»), y se comparó el FEN resultante con la solución.
 
 ## 1. Tus imágenes de prueba (`posiciones01.pdf`)
 
-| Imagen | Original | Pro |
+| Imagen | v2.7.0 | v3.0.0 |
 |---|---|---|
 | Diagrama de libro (casillas rayadas) | 63/64 – alfil blanco de c8 leído como negro | 63/64 – mismo fallo (ahora la casilla se marca en amarillo como dudosa) |
 | Foto de un móvil girado ~35° con perspectiva | ❌ no encuentra el tablero (pide encuadre manual) | ✅ 64/64 |
@@ -14,7 +14,7 @@ Ambas versiones se ejecutaron en Chromium sin interfaz, cargando la imagen igual
 
 Posiciones sacadas de partidas simuladas (no usadas al ajustar el motor). 30 imágenes por tipo, con estilos de piezas distintos (Cburnett y fuentes tipográficas de diagrama), 9 temas de color, coordenadas, resaltado de última jugada y un 30 % de tableros vistos desde negras. Las «fotos» tienen giro de hasta ±35°, perspectiva, desenfoque, ruido, moiré y luz desigual.
 
-| Tipo | Original: posiciones exactas | Pro: posiciones exactas | Original: casillas correctas | Pro: casillas correctas |
+| Tipo | v2.7.0: posiciones exactas | v3.0.0: posiciones exactas | v2.7.0: casillas correctas | v3.0.0: casillas correctas |
 |---|---|---|---|---|
 | Capturas de pantalla | 19/30 | **21/30** | 95,9 % | **97,8 %** |
 | Fotos de pantalla | 0/30 | **22/30** | 69,4 % | **97,1 %** |

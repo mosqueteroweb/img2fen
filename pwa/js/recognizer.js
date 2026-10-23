@@ -1,4 +1,4 @@
-// Motor de reconocimiento Img2FEN Pro:
+// Motor de reconocimiento de Img2FEN (v3):
 // 1) localización precisa del tablero (retícula de esquinas + U-Net + YOLO) con refinamiento subpíxel
 // 2) rectificación en perspectiva y elección automática de la rotación (0/90/180/270°)
 // 3) clasificación por casillas (CNN de casillas con test-time augmentation) fusionada con YOLO

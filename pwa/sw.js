@@ -1,6 +1,7 @@
-// Service Worker de Img2FEN Pro: funciona 100% offline y recibe imágenes compartidas (Web Share Target).
+// Service Worker de Img2FEN: funciona 100% offline y recibe imágenes compartidas (Web Share Target).
 const VERSION = '3.0.0';
-const CACHE = `img2fenpro-${VERSION}`;
+const CACHE = `img2fen-v${VERSION}`;
+const SHARED = 'img2fen-shared-data';
 const ASSETS = [
   './', './index.html', './style.css', './main.js', './manifest.webmanifest',
   './js/recognizer.js', './js/detector.js', './js/geometry.js', './js/imageops.js',
@@ -22,7 +23,8 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k.startsWith('img2fenpro-') && k !== CACHE).map((k) => caches.delete(k)));
+    // borra cachés antiguas, incluidas las de Workbox de la versión 2.x
+    await Promise.all(keys.filter((k) => k !== CACHE && k !== SHARED).map((k) => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -38,7 +40,7 @@ self.addEventListener('fetch', (event) => {
         const form = await req.formData();
         const file = form.get('image');
         if (file) {
-          const cache = await caches.open('img2fenpro-shared-data');
+          const cache = await caches.open(SHARED);
           await cache.put('shared-image', new Response(file, {
             headers: { 'content-type': file.type || 'image/png', 'x-file-name': file.name || 'shared-diagram.png' },
           }));

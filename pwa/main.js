@@ -1,89 +1,7 @@
-import * as ort from 'onnxruntime-web/wasm';
-import { Chess } from 'chess.js';
-import { registerSW } from 'virtual:pwa-register';
+import { Chess } from './js/vendor/chess.js';
+import { recognize, preloadModels } from './js/recognizer.js';
 
-// Configure pure WebAssembly paths using absolute document URL (not relative to bundled /assets/)
-const ROOT_URL = new URL('./', window.location.href).href;
-ort.env.wasm.wasmPaths = `${ROOT_URL}wasm/`;
-ort.env.wasm.numThreads = 1;
-ort.env.wasm.proxy = false;
-
-const MODEL_PATH = `${ROOT_URL}model/chess-tiles-v2.onnx`;
-const YOLO_MODEL_PATH = `${ROOT_URL}model/chess-yolo26n.onnx`;
-const SEGMENTATION_MODEL_PATH = `${ROOT_URL}model/board-segmentation.onnx`;
-const LABELS = '1KQRBNPkqrbnp';
-const TILE_PX = 32;
-
-const YOLO_CLASSES = {
-  0: 'chessboard',
-  1: 'p', 2: 'r', 3: 'b', 4: 'n', 5: 'k', 6: 'q',
-  7: 'P', 8: 'R', 9: 'B', 10: 'N', 11: 'K', 12: 'Q',
-  13: 'rank_one_id', 14: 'last_move_start', 15: 'last_move_end',
-};
-
-let sessionPromise = null;
-let yoloSessionPromise = null;
-let segmentationSessionPromise = null;
-
-async function getYoloSession() {
-  if (!yoloSessionPromise) {
-    yoloSessionPromise = (async () => {
-      try {
-        const session = await ort.InferenceSession.create(YOLO_MODEL_PATH, {
-          executionProviders: ['wasm'],
-          graphOptimizationLevel: 'all',
-        });
-        console.log('ONNX YOLO26n 2D-Chess-OCR model loaded successfully in PWA!');
-        return session;
-      } catch (err) {
-        console.warn('Failed to load YOLO26n model:', err);
-        yoloSessionPromise = null;
-        return null;
-      }
-    })();
-  }
-  return yoloSessionPromise;
-}
-
-async function getInferenceSession() {
-  if (!sessionPromise) {
-    sessionPromise = (async () => {
-      try {
-        const session = await ort.InferenceSession.create(MODEL_PATH, {
-          executionProviders: ['wasm'],
-          graphOptimizationLevel: 'all',
-        });
-        console.log('ONNX Tiles Model loaded successfully in PWA!');
-        return session;
-      } catch (err) {
-        console.error('Failed to load ONNX tiles model:', err);
-        sessionPromise = null;
-        throw err;
-      }
-    })();
-  }
-  return sessionPromise;
-}
-
-async function getSegmentationSession() {
-  if (!segmentationSessionPromise) {
-    segmentationSessionPromise = (async () => {
-      try {
-        const session = await ort.InferenceSession.create(SEGMENTATION_MODEL_PATH, {
-          executionProviders: ['wasm'],
-          graphOptimizationLevel: 'all',
-        });
-        console.log('ONNX Board Segmentation model loaded successfully in PWA!');
-        return session;
-      } catch (err) {
-        console.warn('Failed to load board segmentation model:', err);
-        segmentationSessionPromise = null;
-        return null;
-      }
-    })();
-  }
-  return segmentationSessionPromise;
-}
+const APP_VERSION = '3.0.0';
 
 /**
  * -------------------------------------------------------------
@@ -221,31 +139,6 @@ function setEngineMode(mode) {
 engineAuto?.addEventListener('click', () => setEngineMode('auto'));
 engineBooks?.addEventListener('click', () => setEngineMode('books'));
 engineScreens?.addEventListener('click', () => setEngineMode('screens'));
-
-function detectIsGrayscaleOrBook(source) {
-  try {
-    const testCanvas = document.createElement('canvas');
-    testCanvas.width = 64;
-    testCanvas.height = 64;
-    const ctx = testCanvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(source, 0, 0, 64, 64);
-    const data = ctx.getImageData(0, 0, 64, 64).data;
-    let totalDiff = 0;
-    const count = 64 * 64;
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const maxD = Math.max(Math.abs(r - g), Math.abs(r - b), Math.abs(g - b));
-      totalDiff += maxD;
-    }
-    const avgDiff = totalDiff / count;
-    // An average color difference between R, G, B channels < 14 indicates monochrome / book diagram
-    return avgDiff < 14.0;
-  } catch (e) {
-    return false;
-  }
-}
 
 /**
  * -------------------------------------------------------------
@@ -472,146 +365,6 @@ function renderPerspectiveGrid(viewportRect = null) {
       }
     }
   }
-}
-
-/**
- * Rectifies the arbitrary quadrilateral from sourceCanvas into a square 256x256 canvas
- * using inverse perspective homography and bilinear interpolation.
- */
-function extractWarpedBoard(sourceCanvas, H) {
-  const boardCanvas = document.createElement('canvas');
-  boardCanvas.width = 256;
-  boardCanvas.height = 256;
-  const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
-  const outputImgData = bCtx.createImageData(256, 256);
-  const outData = outputImgData.data;
-
-  const sCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-  const srcW = sourceCanvas.width;
-  const srcH = sourceCanvas.height;
-  const srcData = sCtx.getImageData(0, 0, srcW, srcH).data;
-
-  const inv256 = 1.0 / 256.0;
-
-  for (let y = 0; y < 256; y++) {
-    const v = (y + 0.5) * inv256;
-    // Precalculate row invariants
-    const px0 = H[1] * v + H[2];
-    const py0 = H[4] * v + H[5];
-    const pw0 = H[7] * v + H[8];
-    const rowOffset = y * 256;
-
-    for (let x = 0; x < 256; x++) {
-      const u = (x + 0.5) * inv256;
-      const px = H[0] * u + px0;
-      const py = H[3] * u + py0;
-      const pw = H[6] * u + pw0;
-      const srcX = px / pw;
-      const srcY = py / pw;
-
-      const outIdx = (rowOffset + x) * 4;
-
-      if (srcX >= 0 && srcX < srcW && srcY >= 0 && srcY < srcH) {
-        const x0 = Math.floor(srcX);
-        const y0 = Math.floor(srcY);
-        const x1 = Math.min(x0 + 1, srcW - 1);
-        const y1 = Math.min(y0 + 1, srcH - 1);
-
-        const fx = srcX - x0;
-        const fy = srcY - y0;
-        const w00 = (1 - fx) * (1 - fy);
-        const w10 = fx * (1 - fy);
-        const w01 = (1 - fx) * fy;
-        const w11 = fx * fy;
-
-        const idx00 = (y0 * srcW + x0) * 4;
-        const idx10 = (y0 * srcW + x1) * 4;
-        const idx01 = (y1 * srcW + x0) * 4;
-        const idx11 = (y1 * srcW + x1) * 4;
-
-        outData[outIdx]     = (w00 * srcData[idx00]     + w10 * srcData[idx10]     + w01 * srcData[idx01]     + w11 * srcData[idx11]) | 0;
-        outData[outIdx + 1] = (w00 * srcData[idx00 + 1] + w10 * srcData[idx10 + 1] + w01 * srcData[idx01 + 1] + w11 * srcData[idx11 + 1]) | 0;
-        outData[outIdx + 2] = (w00 * srcData[idx00 + 2] + w10 * srcData[idx10 + 2] + w01 * srcData[idx01 + 2] + w11 * srcData[idx11 + 2]) | 0;
-        outData[outIdx + 3] = 255;
-      } else {
-        outData[outIdx]     = 0;
-        outData[outIdx + 1] = 0;
-        outData[outIdx + 2] = 0;
-        outData[outIdx + 3] = 255;
-      }
-    }
-  }
-  bCtx.putImageData(outputImgData, 0, 0);
-  return boardCanvas;
-}
-
-function invert3x3(m) {
-  const [a, b, c, d, e, f, g, h, i] = m;
-  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
-  const D = -(b * i - c * h), E = a * i - c * g, F = -(a * h - b * g);
-  const G = b * f - c * e, H = -(a * f - c * d), I = a * e - b * d;
-  const det = a * A + b * B + c * C;
-  if (Math.abs(det) < 1e-11) return null;
-  const invDet = 1.0 / det;
-  return [
-    A * invDet, D * invDet, G * invDet,
-    B * invDet, E * invDet, H * invDet,
-    C * invDet, F * invDet, I * invDet
-  ];
-}
-
-/**
- * Rectifies the arbitrary quadrilateral from sourceCanvas into a 640x640 canvas
- * with a context margin (e.g. 32px) so edge pieces retain full context for YOLO26n.
- */
-function extractWarpedBoardWithMargin(sourceCanvas, H, size = 640, marginPx = 32) {
-  const boardCanvas = document.createElement('canvas');
-  boardCanvas.width = size;
-  boardCanvas.height = size;
-  const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
-  const outputImgData = bCtx.createImageData(size, size);
-  const outData = outputImgData.data;
-
-  const sCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-  const srcW = sourceCanvas.width;
-  const srcH = sourceCanvas.height;
-  const srcData = sCtx.getImageData(0, 0, srcW, srcH).data;
-
-  const innerSz = size - 2 * marginPx;
-  const invInner = 1.0 / innerSz;
-
-  for (let y = 0; y < size; y++) {
-    const v = (y - marginPx + 0.5) * invInner;
-    const px0 = H[1] * v + H[2];
-    const py0 = H[4] * v + H[5];
-    const pw0 = H[7] * v + H[8];
-    const rowOffset = y * size;
-
-    for (let x = 0; x < size; x++) {
-      const u = (x - marginPx + 0.5) * invInner;
-      const pw = H[6] * u + pw0;
-      const srcX = (H[0] * u + px0) / pw;
-      const srcY = (H[3] * u + py0) / pw;
-      const outIdx = (rowOffset + x) * 4;
-
-      if (srcX >= 0 && srcX < srcW && srcY >= 0 && srcY < srcH) {
-        const x0 = srcX | 0;
-        const y0 = srcY | 0;
-        const inIdx = (y0 * srcW + x0) * 4;
-        outData[outIdx]     = srcData[inIdx];
-        outData[outIdx + 1] = srcData[inIdx + 1];
-        outData[outIdx + 2] = srcData[inIdx + 2];
-        outData[outIdx + 3] = 255;
-      } else {
-        outData[outIdx]     = 114;
-        outData[outIdx + 1] = 114;
-        outData[outIdx + 2] = 114;
-        outData[outIdx + 3] = 255;
-      }
-    }
-  }
-  bCtx.putImageData(outputImgData, 0, 0);
-  return { canvas: boardCanvas, marginPx, innerSz };
 }
 
 function updateRotationBadge() {
@@ -919,557 +672,7 @@ btnCropBack.addEventListener('click', () => {
 btnResultBack.addEventListener('click', () => showScreen('home'));
 btnResultNew.addEventListener('click', () => showScreen('home'));
 
-btnReopenCrop?.addEventListener('click', () => {
-  showScreen('crop');
-  renderPerspectiveGrid();
-  requestAnimationFrame(renderCanvas);
-});
-
-/**
- * -------------------------------------------------------------
- * SMART CHESSBOARD DETECTION:
- * 1. Periodic 1D Gradient Projection + Bimodal 2-Color Checkerboard Verification
- * 2. Fallback to U-Net Neural Segmentation for angled/tilted photos
- * -------------------------------------------------------------
- */
-function detectChessboardByGridAndColor(img) {
-  try {
-    const origW = img.width;
-    const origH = img.height;
-    if (!origW || !origH) return null;
-
-    // Scale to max 512px for lightning-fast sub-5ms projection analysis
-    const maxDim = 512;
-    const scale = Math.min(1.0, maxDim / Math.max(origW, origH));
-    const sw = Math.round(origW * scale);
-    const sh = Math.round(origH * scale);
-
-    if (!sharedGridCanvas) {
-      sharedGridCanvas = document.createElement('canvas');
-    }
-    sharedGridCanvas.width = sw;
-    sharedGridCanvas.height = sh;
-    const ctx = sharedGridCanvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, sw, sh);
-
-    const imgData = ctx.getImageData(0, 0, sw, sh).data;
-    const gray = new Uint8Array(sw * sh);
-    for (let i = 0; i < gray.length; i++) {
-      const idx = i * 4;
-      gray[i] = (imgData[idx] * 299 + imgData[idx + 1] * 587 + imgData[idx + 2] * 114) / 1000;
-    }
-
-    // 1D Gradient Projections
-    const colGrad = new Float32Array(sw);
-    const rowGrad = new Float32Array(sh);
-
-    // Stride 2 for speed
-    for (let x = 1; x < sw - 1; x++) {
-      let s = 0;
-      for (let y = 1; y < sh - 1; y += 2) {
-        const idxL = y * sw + (x - 1);
-        const idxR = y * sw + (x + 1);
-        s += Math.abs(gray[idxR] - gray[idxL]);
-      }
-      colGrad[x] = s;
-    }
-
-    for (let y = 1; y < sh - 1; y++) {
-      let s = 0;
-      const rowOffset = y * sw;
-      const rowOffsetU = (y - 1) * sw;
-      const rowOffsetD = (y + 1) * sw;
-      for (let x = 1; x < sw - 1; x += 2) {
-        s += Math.abs(gray[rowOffsetD + x] - gray[rowOffsetU + x]);
-      }
-      rowGrad[y] = s;
-    }
-
-    const minSz = Math.floor(Math.min(sw, sh) * 0.40);
-    const maxSz = Math.floor(Math.min(sw, sh) * 1.0);
-
-    let bestColScore = 0;
-    let bestX0 = 0;
-    let bestW = 0;
-    let bestStep = 0;
-
-    for (let size = minSz; size <= maxSz; size += 2) {
-      const step = size / 8.0;
-      for (let x0 = 0; x0 <= sw - size; x0 += 2) {
-        let score = 0;
-        for (let k = 0; k < 9; k++) {
-          const xk = Math.round(x0 + k * step);
-          let maxV = colGrad[xk];
-          if (xk > 0 && colGrad[xk - 1] > maxV) maxV = colGrad[xk - 1];
-          if (xk > 1 && colGrad[xk - 2] > maxV) maxV = colGrad[xk - 2];
-          if (xk < sw - 1 && colGrad[xk + 1] > maxV) maxV = colGrad[xk + 1];
-          if (xk < sw - 2 && colGrad[xk + 2] > maxV) maxV = colGrad[xk + 2];
-          score += maxV;
-        }
-        if (score > bestColScore) {
-          bestColScore = score;
-          bestX0 = x0;
-          bestW = size;
-          bestStep = step;
-        }
-      }
-    }
-
-    if (bestColScore === 0) return null;
-
-    // Search row grid with matching step
-    const minRowSz = Math.floor(bestStep * 7.7);
-    const maxRowSz = Math.ceil(bestStep * 8.3);
-
-    let bestRowScore = 0;
-    let bestY0 = 0;
-    let bestH = 0;
-
-    for (let size = minRowSz; size <= maxRowSz; size++) {
-      const rStep = size / 8.0;
-      for (let y0 = 0; y0 <= sh - size; y0 += 2) {
-        let score = 0;
-        for (let k = 0; k < 9; k++) {
-          const yk = Math.round(y0 + k * rStep);
-          let maxV = rowGrad[yk];
-          if (yk > 0 && rowGrad[yk - 1] > maxV) maxV = rowGrad[yk - 1];
-          if (yk > 1 && rowGrad[yk - 2] > maxV) maxV = rowGrad[yk - 2];
-          if (yk < sh - 1 && rowGrad[yk + 1] > maxV) maxV = rowGrad[yk + 1];
-          if (yk < sh - 2 && rowGrad[yk + 2] > maxV) maxV = rowGrad[yk + 2];
-          score += maxV;
-        }
-        if (score > bestRowScore) {
-          bestRowScore = score;
-          bestY0 = y0;
-          bestH = size;
-        }
-      }
-    }
-
-    if (bestRowScore === 0) return null;
-
-    const aspect = bestW / bestH;
-    if (aspect < 0.90 || aspect > 1.10) return null;
-
-    // 2-Color Checkerboard contrast verification
-    const stepX = bestW / 8.0;
-    const stepY = bestH / 8.0;
-    let lightSumR = 0, lightSumG = 0, lightSumB = 0, lightCount = 0;
-    let darkSumR = 0, darkSumG = 0, darkSumB = 0, darkCount = 0;
-
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 8; c++) {
-        const px = Math.min(sw - 1, Math.max(0, Math.round(bestX0 + (c + 0.20) * stepX)));
-        const py = Math.min(sh - 1, Math.max(0, Math.round(bestY0 + (r + 0.20) * stepY)));
-        const idx = (py * sw + px) * 4;
-        const R = imgData[idx];
-        const G = imgData[idx + 1];
-        const B = imgData[idx + 2];
-
-        if ((r + c) % 2 === 0) {
-          lightSumR += R; lightSumG += G; lightSumB += B; lightCount++;
-        } else {
-          darkSumR += R; darkSumG += G; darkSumB += B; darkCount++;
-        }
-      }
-    }
-
-    const avgLightR = lightSumR / lightCount;
-    const avgLightG = lightSumG / lightCount;
-    const avgLightB = lightSumB / lightCount;
-
-    const avgDarkR = darkSumR / darkCount;
-    const avgDarkG = darkSumG / darkCount;
-    const avgDarkB = darkSumB / darkCount;
-
-    const colorDist = Math.hypot(avgLightR - avgDarkR, avgLightG - avgDarkG, avgLightB - avgDarkB);
-    if (colorDist < 20) {
-      console.warn('[PWA] Grid detected but checkerboard color contrast is too low:', colorDist);
-      return null;
-    }
-
-    // Map back to original image coordinates
-    const invScale = 1.0 / scale;
-    return {
-      realXmin: Math.max(0, Math.round(bestX0 * invScale)),
-      realXmax: Math.min(origW, Math.round((bestX0 + bestW) * invScale)),
-      realYmin: Math.max(0, Math.round(bestY0 * invScale)),
-      realYmax: Math.min(origH, Math.round((bestY0 + bestH) * invScale)),
-      contrast: colorDist,
-      method: 'grid-projection'
-    };
-  } catch (err) {
-    console.warn('[PWA] detectChessboardByGridAndColor error:', err);
-    return null;
-  }
-}
-
-async function detectBoardBounds(img) {
-  // 1. Try high-precision periodic grid & 2-color detector (takes ~5ms)
-  const gridBounds = detectChessboardByGridAndColor(img);
-  if (gridBounds) {
-    console.log('[PWA] Board detected via Periodic Grid & Color Detector:', gridBounds);
-    return gridBounds;
-  }
-
-  // 2. Fallback to U-Net neural segmentation
-  console.log('[PWA] Falling back to U-Net segmentation...');
-  return await detectBoardBoundsWithUNet(img);
-}
-
-async function detectBoardBoundsWithUNet(img) {
-  try {
-    const session = await getSegmentationSession();
-    if (!session) return null;
-
-    // 1. Render to 256x256 offscreen canvas
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, 256, 256);
-
-    const imgData = ctx.getImageData(0, 0, 256, 256);
-    const data = imgData.data;
-
-    // 2. Prepare NCHW float32 tensor
-    const tensorData = new Float32Array(3 * 256 * 256);
-    const channelSize = 256 * 256;
-
-    for (let i = 0; i < channelSize; i++) {
-      const idx = i * 4;
-      tensorData[i] = data[idx] / 255.0; // R
-      tensorData[channelSize + i] = data[idx + 1] / 255.0; // G
-      tensorData[channelSize * 2 + i] = data[idx + 2] / 255.0; // B
-    }
-
-    const inputTensor = new ort.Tensor('float32', tensorData, [1, 3, 256, 256]);
-    let rawOutput = null;
-    let results = null;
-    try {
-      results = await session.run({ input: inputTensor });
-      rawOutput = new Float32Array(results.output.data);
-    } finally {
-      inputTensor.dispose?.();
-      results?.output?.dispose?.();
-    }
-
-    // 3. Threshold probability > 0.5 to create binary mask
-    const binary = new Uint8Array(256 * 256);
-    let positiveCount = 0;
-    for (let i = 0; i < 256 * 256; i++) {
-      const prob = 1.0 / (1.0 + Math.exp(-rawOutput[i]));
-      if (prob > 0.5) {
-        binary[i] = 1;
-        positiveCount++;
-      }
-    }
-
-    if (positiveCount < 1000) return null;
-
-    // 4. Find largest connected component (BFS) to eliminate noise
-    const labels = new Int32Array(256 * 256);
-    const queue = new Int32Array(256 * 256);
-    let currentLabel = 0;
-    const componentSizes = {};
-
-    for (let y = 0; y < 256; y++) {
-      for (let x = 0; x < 256; x++) {
-        const startIdx = (y << 8) + x;
-        if (binary[startIdx] === 1 && labels[startIdx] === 0) {
-          currentLabel++;
-          let head = 0;
-          let tail = 0;
-          queue[tail++] = startIdx;
-          labels[startIdx] = currentLabel;
-
-          while (head < tail) {
-            const curr = queue[head++];
-            const cy = curr >> 8;
-            const cx = curr & 255;
-
-            if (cy > 0) {
-              const n = ((cy - 1) << 8) + cx;
-              if (binary[n] === 1 && labels[n] === 0) { labels[n] = currentLabel; queue[tail++] = n; }
-            }
-            if (cy < 255) {
-              const n = ((cy + 1) << 8) + cx;
-              if (binary[n] === 1 && labels[n] === 0) { labels[n] = currentLabel; queue[tail++] = n; }
-            }
-            if (cx > 0) {
-              const n = (cy << 8) + (cx - 1);
-              if (binary[n] === 1 && labels[n] === 0) { labels[n] = currentLabel; queue[tail++] = n; }
-            }
-            if (cx < 255) {
-              const n = (cy << 8) + (cx + 1);
-              if (binary[n] === 1 && labels[n] === 0) { labels[n] = currentLabel; queue[tail++] = n; }
-            }
-          }
-          componentSizes[currentLabel] = tail;
-        }
-      }
-    }
-
-    let maxLabel = 0;
-    let maxSize = 0;
-    for (const [lbl, sz] of Object.entries(componentSizes)) {
-      if (sz > maxSize) {
-        maxSize = sz;
-        maxLabel = parseInt(lbl, 10);
-      }
-    }
-
-    if (maxSize < 1000) return null;
-
-    // 5. Bounding box in 256x256
-    let minX = 256, maxX = 0, minY = 256, maxY = 0;
-    for (let y = 0; y < 256; y++) {
-      for (let x = 0; x < 256; x++) {
-        if (labels[(y << 8) + x] === maxLabel) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        }
-      }
-    }
-
-    // Add 1.2% margin so borders are not cut
-    const padX = Math.round((maxX - minX) * 0.012);
-    const padY = Math.round((maxY - minY) * 0.012);
-    minX = Math.max(0, minX - padX);
-    maxX = Math.min(256, maxX + padX);
-    minY = Math.max(0, minY - padY);
-    maxY = Math.min(256, maxY + padY);
-
-    const origW = img.width;
-    const origH = img.height;
-    return {
-      realXmin: (minX / 256) * origW,
-      realXmax: (maxX / 256) * origW,
-      realYmin: (minY / 256) * origH,
-      realYmax: (maxY / 256) * origH,
-    };
-  } catch (err) {
-    console.warn('[PWA] detectBoardBoundsWithUNet error:', err);
-    return null;
-  }
-}
-
-/**
- * -------------------------------------------------------------
- * YOLO26n 2D-CHESS-OCR OBJECT DETECTOR & TRAPEZOID REFINEMENT
- * -------------------------------------------------------------
- */
-async function runYolo26OnSource(source, origW, origH) {
-  const session = await getYoloSession();
-  if (!session) return null;
-
-  const scaleFactor = Math.min(640 / origW, 640 / origH);
-  const nw = Math.round(origW * scaleFactor);
-  const nh = Math.round(origH * scaleFactor);
-  const padX = Math.floor((640 - nw) / 2);
-  const padY = Math.floor((640 - nh) / 2);
-
-  if (!sharedYoloCanvas) {
-    sharedYoloCanvas = document.createElement('canvas');
-    sharedYoloCanvas.width = 640;
-    sharedYoloCanvas.height = 640;
-  }
-  const yCtx = sharedYoloCanvas.getContext('2d', { willReadFrequently: true });
-  yCtx.fillStyle = '#727272';
-  yCtx.fillRect(0, 0, 640, 640);
-  yCtx.drawImage(source, 0, 0, origW, origH, padX, padY, nw, nh);
-
-  const imgData = yCtx.getImageData(0, 0, 640, 640).data;
-  const ch640 = 640 * 640;
-  const tensorData = new Float32Array(3 * ch640);
-  const inv255 = 1.0 / 255.0;
-
-  for (let i = 0; i < ch640; i++) {
-    const idx = i * 4;
-    tensorData[i] = imgData[idx] * inv255;
-    tensorData[ch640 + i] = imgData[idx + 1] * inv255;
-    tensorData[2 * ch640 + i] = imgData[idx + 2] * inv255;
-  }
-
-  const inputTensor = new ort.Tensor('float32', tensorData, [1, 3, 640, 640]);
-  let rawOut = null;
-  let results = null;
-  try {
-    const inputName = session.inputNames[0] || 'images';
-    const outputName = session.outputNames[0] || 'output0';
-    results = await session.run({ [inputName]: inputTensor });
-    rawOut = new Float32Array(results[outputName].data);
-  } finally {
-    inputTensor.dispose?.();
-    if (results) {
-      for (const k of Object.keys(results)) {
-        results[k]?.dispose?.();
-      }
-    }
-  }
-
-  let boardBox = null;
-  const pieces = [];
-  let rankOneDet = null;
-  const lmStarts = [];
-  const lmEnds = [];
-
-  const invScale = 1.0 / scaleFactor;
-  for (let i = 0; i < 300; i++) {
-    const base = i * 6;
-    const conf = rawOut[base + 4];
-    if (conf < 0.22) continue;
-
-    const x1 = (rawOut[base] - padX) * invScale;
-    const y1 = (rawOut[base + 1] - padY) * invScale;
-    const x2 = (rawOut[base + 2] - padX) * invScale;
-    const y2 = (rawOut[base + 3] - padY) * invScale;
-    const cls = Math.round(rawOut[base + 5]);
-    const entry = {
-      x1, y1, x2, y2,
-      cx: (x1 + x2) * 0.5,
-      cy: (y1 + y2) * 0.5,
-      conf,
-      cls,
-      name: YOLO_CLASSES[cls],
-    };
-
-    if (cls === 0 && (!boardBox || conf > boardBox.conf)) {
-      boardBox = entry;
-    } else if (cls >= 1 && cls <= 12) {
-      pieces.push(entry);
-    } else if (cls === 13 && (!rankOneDet || conf > rankOneDet.conf)) {
-      rankOneDet = entry;
-    } else if (cls === 14) {
-      lmStarts.push(entry);
-    } else if (cls === 15) {
-      lmEnds.push(entry);
-    }
-  }
-
-  return { boardBox, pieces, rankOneDet, lmStarts, lmEnds };
-}
-
-function fitTrapezoidCorners(boardBox, pieces, origW, origH) {
-  let { x1, y1, x2, y2 } = boardBox;
-  const bw = x2 - x1;
-  const bh = y2 - y1;
-
-  for (const p of pieces) {
-    if (
-      p.conf > 0.5 &&
-      p.cx >= x1 - 0.08 * bw &&
-      p.cx <= x2 + 0.08 * bw &&
-      p.cy >= y1 - 0.05 * bh &&
-      p.cy <= y2 + 0.05 * bh
-    ) {
-      if (p.y1 < y1) y1 = p.y1;
-      if (p.y2 > y2) y2 = p.y2;
-    }
-  }
-
-  let topLeftMin = x1, topRightMax = x2;
-  let botLeftMin = x1, botRightMax = x2;
-
-  for (const p of pieces) {
-    if (
-      p.conf > 0.5 &&
-      p.cy >= y1 &&
-      p.cy <= y2 &&
-      p.cx >= x1 - 0.08 * bw &&
-      p.cx <= x2 + 0.08 * bw
-    ) {
-      const relY = (p.cy - y1) / Math.max(1, y2 - y1);
-      if (relY < 0.35) {
-        if (p.x1 < topLeftMin) topLeftMin = p.x1;
-        if (p.x2 > topRightMax) topRightMax = p.x2;
-      } else if (relY > 0.65) {
-        if (p.x1 < botLeftMin) botLeftMin = p.x1;
-        if (p.x2 > botRightMax) botRightMax = p.x2;
-      }
-    }
-  }
-
-  return {
-    tl: { x: Math.max(0, topLeftMin), y: Math.max(0, y1) },
-    tr: { x: Math.min(origW, topRightMax), y: Math.max(0, y1) },
-    br: { x: Math.min(origW, botRightMax), y: Math.min(origH, y2) },
-    bl: { x: Math.max(0, botLeftMin), y: Math.min(origH, y2) },
-  };
-}
-
-function detectOrientationAndTurn(grid, rankOneDet, boardBox, lmEnds, pieces) {
-  let isFlipped = false;
-
-  // 1. Text marker "1" (rank_one_id) if detected
-  if (rankOneDet && boardBox && rankOneDet.conf > 0.45) {
-    const boardCy = (boardBox.y1 + boardBox.y2) * 0.5;
-    isFlipped = rankOneDet.cy < boardCy;
-  } else {
-    // 2. Pawn advancement direction (universal law of chess)
-    // White pawns start on rank 2 and march towards rank 8; Black pawns march towards rank 1.
-    const whitePawnRanks = [];
-    const blackPawnRanks = [];
-    for (let r = 0; r < 8; r++) {
-      const rankNum = 8 - r; // r=0 is visual rank 8, r=7 is visual rank 1
-      for (let c = 0; c < 8; c++) {
-        const p = grid[r * 8 + c];
-        if (p === 'P') whitePawnRanks.push(rankNum);
-        else if (p === 'p') blackPawnRanks.push(rankNum);
-      }
-    }
-
-    if (whitePawnRanks.length > 0 && blackPawnRanks.length > 0) {
-      const avgW = whitePawnRanks.reduce((a, b) => a + b, 0) / whitePawnRanks.length;
-      const avgB = blackPawnRanks.reduce((a, b) => a + b, 0) / blackPawnRanks.length;
-      // If White pawns sit higher on average than Black pawns, board is viewed from Black's side
-      if (avgW > avgB) {
-        isFlipped = true;
-      }
-    } else {
-      // 3. Fallback: Major pieces heuristic
-      let whiteTop = 0, whiteBot = 0;
-      let blackTop = 0, blackBot = 0;
-      for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 8; c++) {
-          const p = grid[r * 8 + c];
-          if (!p) continue;
-          if (p === 'K' || p === 'R' || p === 'Q') {
-            if (r <= 1) whiteTop += 1;
-            else if (r >= 6) whiteBot += 1;
-          } else if (p === 'k' || p === 'r' || p === 'q') {
-            if (r <= 1) blackTop += 1;
-            else if (r >= 6) blackBot += 1;
-          }
-        }
-      }
-      if ((whiteTop + blackBot) > (blackTop + whiteBot)) {
-        isFlipped = true;
-      }
-    }
-  }
-
-  // Default turn to the player at the bottom of the diagram (White if normal, Black if flipped)
-  let turn = isFlipped ? 'b' : 'w';
-
-  if (lmEnds && lmEnds.length > 0 && pieces && pieces.length > 0) {
-    const bestEnd = lmEnds[0];
-    let bestPiece = null;
-    for (const p of pieces) {
-      if (p.cx >= bestEnd.x1 && p.cx <= bestEnd.x2 && p.cy >= bestEnd.y1 && p.cy <= bestEnd.y2) {
-        if (!bestPiece || p.conf > bestPiece.conf) bestPiece = p;
-      }
-    }
-    if (bestPiece) {
-      const isBlackPiece = bestPiece.cls >= 1 && bestPiece.cls <= 6;
-      turn = isBlackPiece ? 'w' : 'b';
-    }
-  }
-
-  return { isFlipped, turn };
-}
+btnReopenCrop?.addEventListener('click', () => openCropScreen());
 
 function syncTurnButtonsUI() {
   if (activeColor === 'b') {
@@ -1544,396 +747,132 @@ function applyCornersToCropView(corners, zoomIn = false) {
   }
 }
 
-async function autoDetectChessboardWithAI(manual = false) {
+/**
+ * -------------------------------------------------------------
+ * MOTOR DE RECONOCIMIENTO (js/recognizer.js)
+ * -------------------------------------------------------------
+ */
+let lastQuad = null;              // esquinas detectadas en coordenadas de la imagen original
+let uncertainSquares = new Set(); // casillas con baja confianza
+
+function cornersFromQuad(q) {
+  return {
+    tl: { x: q[0][0], y: q[0][1] },
+    tr: { x: q[1][0], y: q[1][1] },
+    br: { x: q[2][0], y: q[2][1] },
+    bl: { x: q[3][0], y: q[3][1] },
+  };
+}
+
+function setCropFromQuad(q) {
+  lastQuad = q;
+  applyCornersToCropView(cornersFromQuad(q), true);
+}
+
+function openCropScreen() {
+  showScreen('crop');
+  requestAnimationFrame(() => {
+    if (lastQuad) applyCornersToCropView(cornersFromQuad(lastQuad), true);
+    renderCanvas();
+    renderPerspectiveGrid();
+  });
+}
+
+function applyRecognition(r) {
+  currentSquares = r.squares.slice();
+  isBoardViewFlipped = r.flipped;
+  activeColor = r.turn;
+  uncertainSquares = new Set();
+  r.conf.forEach((c, i) => { if (c < 0.75) uncertainSquares.add(i); });
+  syncTurnButtonsUI();
+  renderBoard();
+  updateFenDisplay();
+  saveToHistory(getFenString());
+  showScreen('result');
+}
+
+function progressText(t) {
+  if (loadingText) loadingText.textContent = t;
+}
+
+async function processImageDirectlyToResult() {
   if (!currentImage) return;
-
   try {
-    if (manual) showToast('🔍 Detectando tablero con IA...');
-
-    const yoloRes = await runYolo26OnSource(currentImage, currentImage.width, currentImage.height);
-    if (yoloRes && yoloRes.boardBox) {
-      const corners = fitTrapezoidCorners(yoloRes.boardBox, yoloRes.pieces, currentImage.width, currentImage.height);
-      applyCornersToCropView(corners, true);
-      renderPerspectiveGrid();
-      renderCanvas();
-      showToast('✨ Tablero y perspectiva encuadrados con IA', 2500);
+    showLoading('Reconociendo posición con IA...');
+    const r = await recognize(currentImage, { mode: currentEngineMode, onProgress: progressText });
+    if (!r || r.failed) {
+      hideLoading();
+      lastQuad = r && r.quad ? r.quad : null;
+      if (!lastQuad) {
+        gridCorners = { tl: { x: 10, y: 10 }, tr: { x: 90, y: 10 }, br: { x: 90, y: 90 }, bl: { x: 10, y: 90 } };
+      }
+      showToast('⚠️ No encontré el tablero con claridad. Ajusta las 4 esquinas.', 4000);
+      openCropScreen();
       return;
     }
+    lastQuad = r.quad;
+    applyRecognition(r);
+    const secs = (r.ms / 1000).toFixed(1);
+    showToast(r.flipped ? `✨ Posición reconocida en ${secs} s (vista desde Negras)` : `✨ Posición reconocida en ${secs} s`, 2800);
+  } catch (err) {
+    console.error('Error en el reconocimiento:', err);
+    hideLoading();
+    showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
+    openCropScreen();
+  } finally {
+    hideLoading();
+  }
+}
 
-    const bounds = await detectBoardBounds(currentImage);
-    if (!bounds) {
+// Convierte un punto del visor (en %) a coordenadas de la imagen original, deshaciendo zoom, giro y desplazamiento
+function viewportToImage(pt) {
+  const rect = cropViewport.getBoundingClientRect();
+  const w = rect.width || 400, h = rect.height || 400;
+  const baseScale = Math.min(w / currentImage.width, h / currentImage.height);
+  const dx = (pt.x / 100) * w - (w / 2 + offsetX);
+  const dy = (pt.y / 100) * h - (h / 2 + offsetY);
+  const a = (-rotation * Math.PI) / 180;
+  const rx = (dx * Math.cos(a) - dy * Math.sin(a)) / scale;
+  const ry = (dx * Math.sin(a) + dy * Math.cos(a)) / scale;
+  return [rx / baseScale + currentImage.width / 2, ry / baseScale + currentImage.height / 2];
+}
+
+async function autoDetectChessboardWithAI(manual = false) {
+  if (!currentImage) return;
+  try {
+    showLoading('Buscando el tablero...');
+    const r = await recognize(currentImage, { mode: currentEngineMode, onProgress: progressText });
+    hideLoading();
+    if (!r || r.failed || !r.quad) {
       if (manual) showToast('No se detectó un tablero claro en la foto.');
       return;
     }
-
-    applyCornersToCropView({
-      tl: { x: bounds.realXmin, y: bounds.realYmin },
-      tr: { x: bounds.realXmax, y: bounds.realYmin },
-      br: { x: bounds.realXmax, y: bounds.realYmax },
-      bl: { x: bounds.realXmin, y: bounds.realYmax },
-    }, true);
-
-    renderPerspectiveGrid();
+    setCropFromQuad(r.quad);
     renderCanvas();
-    showToast('✨ Tablero encuadrado automáticamente con IA', 2500);
+    renderPerspectiveGrid();
+    showToast('✨ Tablero encuadrado automáticamente', 2500);
   } catch (err) {
-    console.warn('[PWA] Error en autoDetectChessboardWithAI:', err);
+    hideLoading();
+    console.warn('[PWA] Error en la detección automática:', err);
     if (manual) showToast('Error al analizar la imagen.');
   }
 }
 
 btnAutoDetect?.addEventListener('click', () => autoDetectChessboardWithAI(true));
 
-/**
- * -------------------------------------------------------------
- * END-TO-END PIPELINE: IMAGE -> YOLO26n + HYBRID ENSEMBLE -> RESULT
- * -------------------------------------------------------------
- */
-async function processImageDirectlyToResult() {
-  if (!currentImage) return;
-
-  try {
-    showLoading('Reconociendo posición con IA...');
-
-    const isBook = (currentEngineMode === 'books') || (currentEngineMode === 'auto' && detectIsGrayscaleOrBook(currentImage));
-
-    // For book diagrams / monochrome prints, prioritize Fenshot tile CNN (specialized in hatched/striped squares)
-    if (isBook) {
-      let bounds = await detectBoardBounds(currentImage);
-      if (!bounds) {
-        const yoloRes = await runYolo26OnSource(currentImage, currentImage.width, currentImage.height);
-        if (yoloRes && yoloRes.boardBox) {
-          bounds = {
-            realXmin: yoloRes.boardBox.x1,
-            realYmin: yoloRes.boardBox.y1,
-            realXmax: yoloRes.boardBox.x2,
-            realYmax: yoloRes.boardBox.y2,
-          };
-        }
-      }
-
-      if (bounds) {
-        applyCornersToCropView({
-          tl: { x: bounds.realXmin, y: bounds.realYmin },
-          tr: { x: bounds.realXmax, y: bounds.realYmin },
-          br: { x: bounds.realXmax, y: bounds.realYmax },
-          bl: { x: bounds.realXmin, y: bounds.realYmax },
-        }, false);
-
-        const boardCanvas = document.createElement('canvas');
-        boardCanvas.width = 256;
-        boardCanvas.height = 256;
-        const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
-        bCtx.drawImage(
-          currentImage,
-          bounds.realXmin, bounds.realYmin, bounds.realXmax - bounds.realXmin, bounds.realYmax - bounds.realYmin,
-          0, 0, 256, 256
-        );
-
-        const recognized = await runTileInferenceOnBoardCanvas(boardCanvas, false, null, true);
-        if (recognized) {
-          showToast('📖 Diagrama de libro reconocido con Fenshot', 2800);
-          return;
-        }
-      }
-    }
-
-    // 1. Primary Pass for Photos & Screens: YOLO26n 2D-Chess-OCR (detects board, pieces, orientation & turn in 1 pass)
-    const yoloRes = await runYolo26OnSource(currentImage, currentImage.width, currentImage.height);
-
-    if (yoloRes && yoloRes.boardBox && yoloRes.pieces.length >= 2) {
-      const corners = fitTrapezoidCorners(yoloRes.boardBox, yoloRes.pieces, currentImage.width, currentImage.height);
-      applyCornersToCropView(corners, false);
-
-      const H = getHomographyFromUnitSquare(corners.tl, corners.tr, corners.br, corners.bl);
-      const Hinv = H ? invert3x3(H) : null;
-
-      if (Hinv) {
-        const grid = Array(64).fill(null);
-        const gridConf = Array(64).fill(0);
-        let matchedCount = 0;
-
-        for (const p of yoloRes.pieces) {
-          const u = Hinv[0] * p.cx + Hinv[1] * p.cy + Hinv[2];
-          const v = Hinv[3] * p.cx + Hinv[4] * p.cy + Hinv[5];
-          const w = Hinv[6] * p.cx + Hinv[7] * p.cy + Hinv[8];
-          const normU = u / w;
-          const normV = v / w;
-
-          if (normU >= -0.04 && normU <= 1.04 && normV >= -0.04 && normV <= 1.04) {
-            const col = Math.min(7, Math.max(0, Math.floor(normU * 8)));
-            const row = Math.min(7, Math.max(0, Math.floor(normV * 8)));
-            const idx = row * 8 + col;
-            if (p.conf > gridConf[idx]) {
-              if (!grid[idx]) matchedCount++;
-              grid[idx] = p.name;
-              gridConf[idx] = p.conf;
-            }
-          }
-        }
-
-        if (matchedCount >= 2) {
-          const { isFlipped, turn } = detectOrientationAndTurn(
-            grid,
-            yoloRes.rankOneDet,
-            yoloRes.boardBox,
-            yoloRes.lmEnds,
-            yoloRes.pieces
-          );
-          currentSquares = isFlipped ? [...grid].reverse() : grid;
-          isBoardViewFlipped = isFlipped;
-          activeColor = turn;
-          syncTurnButtonsUI();
-
-          renderBoard();
-          updateFenDisplay();
-          saveToHistory(getFenString());
-          showScreen('result');
-          showToast(
-            isFlipped
-              ? '✨ Posición reconocida (Vista desde Negras)'
-              : '✨ Posición reconocida al instante con IA',
-            2800
-          );
-          return;
-        }
-      }
-    }
-
-    // 2. Fallback: Periodic Grid + U-Net segmentation + Tile Classifier
-    const bounds = await detectBoardBounds(currentImage);
-
-    if (!bounds) {
-      hideLoading();
-      showToast('⚠️ No se reconoció el tablero automáticamente. Ajusta las esquinas.', 4000);
-      gridCorners = {
-        tl: { x: 10, y: 10 },
-        tr: { x: 90, y: 10 },
-        br: { x: 90, y: 90 },
-        bl: { x: 10, y: 90 }
-      };
-      showScreen('crop');
-      requestAnimationFrame(() => {
-        renderCanvas();
-        renderPerspectiveGrid();
-      });
-      return;
-    }
-
-    applyCornersToCropView({
-      tl: { x: bounds.realXmin, y: bounds.realYmin },
-      tr: { x: bounds.realXmax, y: bounds.realYmin },
-      br: { x: bounds.realXmax, y: bounds.realYmax },
-      bl: { x: bounds.realXmin, y: bounds.realYmax },
-    }, false);
-
-    const boardCanvas = document.createElement('canvas');
-    boardCanvas.width = 256;
-    boardCanvas.height = 256;
-    const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
-    bCtx.drawImage(
-      currentImage,
-      bounds.realXmin, bounds.realYmin, bounds.realXmax - bounds.realXmin, bounds.realYmax - bounds.realYmin,
-      0, 0, 256, 256
-    );
-
-    const recognized = await runTileInferenceOnBoardCanvas(boardCanvas, false);
-    if (recognized) {
-      showToast('✨ Posición reconocida al instante con IA', 2500);
-    } else {
-      hideLoading();
-      showToast('⚠️ No se reconoció el tablero con claridad. Ajusta las esquinas.', 4000);
-      showScreen('crop');
-      requestAnimationFrame(() => {
-        renderCanvas();
-        renderPerspectiveGrid();
-      });
-    }
-  } catch (err) {
-    console.error('Error in processImageDirectlyToResult:', err);
-    hideLoading();
-    showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
-    showScreen('crop');
-    requestAnimationFrame(() => {
-      renderCanvas();
-      renderPerspectiveGrid();
-    });
-  } finally {
-    hideLoading();
-  }
-}
-
-async function runTileInferenceOnBoardCanvas(boardCanvas, isManual = false, warpedYoloInfo = null, forceFenshot = false) {
-  const session = await getInferenceSession();
-
-  // 1. Extract Grayscale [0, 1] for 256x256
-  const bCtx = boardCanvas.getContext('2d', { willReadFrequently: true });
-  const imgData = bCtx.getImageData(0, 0, 256, 256);
-  const boardGray = new Float32Array(256 * 256);
-  for (let i = 0; i < boardGray.length; i++) {
-    const idx = i * 4;
-    boardGray[i] = (0.299 * imgData.data[idx] + 0.587 * imgData.data[idx + 1] + 0.114 * imgData.data[idx + 2]) / 255.0;
-  }
-
-  // 2. Slice into 64 tiles (32x32)
-  const tilesInput = new Float32Array(64 * TILE_PX * TILE_PX);
-  for (let rank = 0; rank < 8; rank++) {
-    for (let file = 0; file < 8; file++) {
-      const tileIdx = rank * 8 + file;
-      const tileOffset = tileIdx * (TILE_PX * TILE_PX);
-      const startY = rank * TILE_PX;
-      const startX = file * TILE_PX;
-
-      for (let y = 0; y < TILE_PX; y++) {
-        for (let x = 0; x < TILE_PX; x++) {
-          tilesInput[tileOffset + y * TILE_PX + x] = boardGray[(startY + y) * 256 + (startX + x)];
-        }
-      }
-    }
-  }
-
-  // 3. Run ONNX Tile Inference with tensor memory disposal
-  const inputTensor = new ort.Tensor('float32', tilesInput, [64, TILE_PX * TILE_PX]);
-  let results = null;
-  let probs = null;
-  try {
-    results = await session.run({ tiles: inputTensor });
-    probs = new Float32Array(results.probs.data);
-  } finally {
-    inputTensor.dispose?.();
-    results?.probs?.dispose?.();
-  }
-
-  // 4. Parse tile classifications
-  const tileGrid = [];
-  const tileConf = [];
-  let pieceCount = 0;
-  for (let i = 0; i < 64; i++) {
-    let maxProb = -1;
-    let maxClass = 0;
-    for (let c = 0; c < 13; c++) {
-      const p = probs[i * 13 + c];
-      if (p > maxProb) {
-        maxProb = p;
-        maxClass = c;
-      }
-    }
-    const char = LABELS[maxClass];
-    if (char !== '1') pieceCount++;
-    tileGrid.push(char === '1' ? null : char);
-    tileConf.push(maxProb);
-  }
-
-  // 5. Hybrid Ensemble with YOLO26n if warpedYoloInfo is provided (Manual Crop mode)
-  let recognizedGrid = tileGrid;
-  let rankOneDet = null;
-  let boardBox = null;
-  let lmEnds = [];
-  let yoloPieces = [];
-
-  const isMonochrome = forceFenshot || (currentEngineMode === 'books') || (currentEngineMode === 'auto' && detectIsGrayscaleOrBook(boardCanvas));
-  const meanTileConf = tileConf.reduce((a, b) => a + b, 0) / 64;
-
-  if (!isMonochrome && currentEngineMode !== 'books' && warpedYoloInfo && warpedYoloInfo.canvas) {
-    const yoloRes = await runYolo26OnSource(warpedYoloInfo.canvas, warpedYoloInfo.canvas.width, warpedYoloInfo.canvas.height);
-    if (yoloRes && yoloRes.pieces.length >= 1) {
-      rankOneDet = yoloRes.rankOneDet;
-      boardBox = yoloRes.boardBox;
-      lmEnds = yoloRes.lmEnds;
-      yoloPieces = yoloRes.pieces;
-
-      const { marginPx, innerSz } = warpedYoloInfo;
-      const yoloGrid = Array(64).fill(null);
-      const yoloConf = Array(64).fill(0);
-
-      for (const p of yoloRes.pieces) {
-        const u = (p.cx - marginPx) / innerSz;
-        const v = (p.cy - marginPx) / innerSz;
-        if (u >= -0.05 && u <= 1.05 && v >= -0.05 && v <= 1.05) {
-          const col = Math.min(7, Math.max(0, Math.floor(u * 8)));
-          const row = Math.min(7, Math.max(0, Math.floor(v * 8)));
-          const idx = row * 8 + col;
-          if (p.conf > yoloConf[idx]) {
-            yoloGrid[idx] = p.name;
-            yoloConf[idx] = p.conf;
-          }
-        }
-      }
-
-      // If Fenshot mean confidence is high on standard rectified board, prioritize Fenshot
-      const ensembleGrid = Array(64).fill(null);
-      pieceCount = 0;
-      for (let i = 0; i < 64; i++) {
-        if (meanTileConf > 0.86 && tileGrid[i] && tileConf[i] > 0.80) {
-          ensembleGrid[i] = tileGrid[i];
-        } else if (yoloGrid[i] && yoloConf[i] >= 0.40) {
-          ensembleGrid[i] = yoloGrid[i];
-        } else if (tileGrid[i] && tileConf[i] >= 0.65) {
-          ensembleGrid[i] = tileGrid[i];
-        }
-        if (ensembleGrid[i]) pieceCount++;
-      }
-      recognizedGrid = ensembleGrid;
-    }
-  }
-
-  // In auto mode, if virtually no pieces were recognized, treat as unverified
-  if (!isManual && pieceCount < 2) {
-    return false;
-  }
-
-  // 6. Check orientation (180° flip if necessary) & turn
-  const { isFlipped, turn } = detectOrientationAndTurn(
-    recognizedGrid,
-    rankOneDet,
-    boardBox,
-    lmEnds,
-    yoloPieces
-  );
-  currentSquares = isFlipped ? [...recognizedGrid].reverse() : recognizedGrid;
-  isBoardViewFlipped = isFlipped;
-  activeColor = turn;
-  syncTurnButtonsUI();
-
-  // 7. Update UI & History
-  renderBoard();
-  updateFenDisplay();
-  saveToHistory(getFenString());
-  showScreen('result');
-  return true;
-}
-
-/**
- * -------------------------------------------------------------
- * MANUAL RE-ANALYSIS FROM CROP SCREEN
- * -------------------------------------------------------------
- */
 btnProcessScan?.addEventListener('click', async () => {
   if (!currentImage) return;
-
   try {
     showLoading('Re-analizando con el nuevo encuadre...');
-
-    const rect = cropViewport.getBoundingClientRect();
-    const w = rect.width || 400;
-    const h = rect.height || 400;
-
-    const p0 = { x: (gridCorners.tl.x / 100) * w, y: (gridCorners.tl.y / 100) * h };
-    const p1 = { x: (gridCorners.tr.x / 100) * w, y: (gridCorners.tr.y / 100) * h };
-    const p2 = { x: (gridCorners.br.x / 100) * w, y: (gridCorners.br.y / 100) * h };
-    const p3 = { x: (gridCorners.bl.x / 100) * w, y: (gridCorners.bl.y / 100) * h };
-
-    const H = getHomographyFromUnitSquare(p0, p1, p2, p3);
-    if (!H) throw new Error('Las 4 esquinas no forman una cuadrícula válida.');
-
-    const boardCanvas = extractWarpedBoard(cropCanvas, H);
-    const warpedYoloInfo = extractWarpedBoardWithMargin(cropCanvas, H, 640, 32);
-
-    await runTileInferenceOnBoardCanvas(boardCanvas, true, warpedYoloInfo);
+    const quad = [gridCorners.tl, gridCorners.tr, gridCorners.br, gridCorners.bl].map(viewportToImage);
+    const r = await recognize(currentImage, { quad, mode: currentEngineMode, onProgress: progressText });
+    if (!r || r.failed) throw new Error('Las 4 esquinas no forman un tablero válido.');
+    lastQuad = r.quad;
+    applyRecognition(r);
     showToast('✨ Posición actualizada con el nuevo encuadre', 2500);
   } catch (err) {
     console.error('Classification error:', err);
-    alert('Error al clasificar el tablero: ' + err.message);
+    showToast('⚠️ ' + err.message, 3500);
   } finally {
     hideLoading();
   }
@@ -1956,6 +895,7 @@ function renderBoard() {
     viewSideLabel.textContent = isBoardViewFlipped ? 'Negras' : 'Blancas';
   }
 
+  document.getElementById('uncertain-hint')?.classList.toggle('hidden', uncertainSquares.size === 0);
   chessboard.innerHTML = '';
   for (let vRank = 0; vRank < 8; vRank++) {
     for (let vFile = 0; vFile < 8; vFile++) {
@@ -1968,6 +908,7 @@ function renderBoard() {
       let classes = `square ${isLight ? 'light' : 'dark'}`;
       if (idx === inCheckSquare) classes += ' in-check';
       if (invalidSquares && invalidSquares.has(idx)) classes += ' invalid-piece';
+      if (uncertainSquares.has(idx)) classes += ' uncertain';
 
       squareEl.className = classes;
       squareEl.dataset.index = idx;
@@ -2013,6 +954,7 @@ btnFlipView?.addEventListener('click', () => {
 
 btnInvertBoard?.addEventListener('click', () => {
   currentSquares.reverse();
+  uncertainSquares = new Set([...uncertainSquares].map((i) => 63 - i));
   isBoardViewFlipped = !isBoardViewFlipped;
   renderBoard();
   updateFenDisplay();
@@ -2224,6 +1166,7 @@ pieceModal.querySelectorAll('.piece-btn').forEach((btn) => {
     const piece = btn.dataset.piece;
     if (selectedSquareIndex >= 0) {
       currentSquares[selectedSquareIndex] = piece;
+      uncertainSquares.delete(selectedSquareIndex);
       renderBoard();
       updateFenDisplay();
       pieceModal.classList.add('hidden');
@@ -2234,6 +1177,7 @@ pieceModal.querySelectorAll('.piece-btn').forEach((btn) => {
 btnClearSquare.addEventListener('click', () => {
   if (selectedSquareIndex >= 0) {
     currentSquares[selectedSquareIndex] = null;
+    uncertainSquares.delete(selectedSquareIndex);
     renderBoard();
     updateFenDisplay();
     pieceModal.classList.add('hidden');
@@ -2286,7 +1230,7 @@ btnCopyFen.addEventListener('click', async () => {
       btnCopyFen.textContent = '📋 Copiar FEN';
     }, 2000);
   } catch (err) {
-    alert('FEN: ' + getFenString());
+    showToast('FEN: ' + getFenString(), 5000);
   }
 });
 
@@ -2305,8 +1249,7 @@ btnShareFen.addEventListener('click', async () => {
       });
     } catch (_) {}
   } else {
-    navigator.clipboard.writeText(fen);
-    alert('FEN copiado al portapapeles: ' + fen);
+    try { await navigator.clipboard.writeText(fen); showToast('📋 FEN copiado al portapapeles', 2500); } catch (_) { showToast('FEN: ' + fen, 5000); }
   }
 });
 
@@ -2369,6 +1312,7 @@ function loadFenIntoBoard(fen) {
   isBoardViewFlipped = false;
   syncTurnButtonsUI();
 
+  uncertainSquares = new Set();
   currentSquares = Array(64).fill(null);
   for (let r = 0; r < 8; r++) {
     let col = 0;
@@ -2495,125 +1439,69 @@ function showToast(message, duration = 3000) {
  * PWA SERVICE WORKER & AUTO-UPDATE ENGINE
  * -------------------------------------------------------------
  */
-let updateServiceWorkerFn = null;
+/**
+ * -------------------------------------------------------------
+ * SERVICE WORKER: OFFLINE Y ACTUALIZACIONES
+ * -------------------------------------------------------------
+ */
 let swRegistration = null;
 
-updateServiceWorkerFn = registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    console.log('[PWA] Nueva versión disponible en segundo plano.');
-    // Only auto-reload if user is idle on the home screen with no image loaded
-    if (!currentImage && document.getElementById('screen-home')?.classList.contains('active')) {
-      showToast('⚡ Actualizando a la última versión...', 2000);
-      setTimeout(() => {
-        if (updateServiceWorkerFn) {
-          updateServiceWorkerFn(true);
-        } else {
-          window.location.reload();
-        }
-      }, 500);
+function isIdleOnHome() {
+  return !currentImage && document.getElementById('screen-home')?.classList.contains('active');
+}
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      swRegistration = await navigator.serviceWorker.register('./sw.js');
+      setTimeout(() => { if (!currentImage) swRegistration.update().catch(() => {}); }, 1500);
+      window.addEventListener('focus', () => { if (isIdleOnHome()) swRegistration.update().catch(() => {}); });
+      setInterval(() => { if (!currentImage) swRegistration.update().catch(() => {}); }, 15 * 60 * 1000);
+    } catch (err) {
+      console.warn('[PWA] Error registrando el Service Worker:', err);
     }
-  },
-  onOfflineReady() {
-    console.log('[PWA] Aplicación lista para funcionar offline.');
-  },
-  onRegisteredSW(swUrl, registration) {
-    swRegistration = registration;
-    console.log('[PWA] Service Worker registrado correctamente.');
-    if (registration) {
-      // 1. Chequeo automático al abrir la aplicación (tras 1.5s de cortesía)
-      setTimeout(() => {
-        if (!currentImage) {
-          try {
-            registration.update().catch(() => {});
-          } catch (_) {}
-        }
-      }, 1500);
+  });
+}
 
-      // 2. Chequeo automático cuando la app vuelve a primer plano (solo si no hay imagen en proceso)
-      window.addEventListener('focus', () => {
-        if (!currentImage && document.getElementById('screen-home')?.classList.contains('active')) {
-          try {
-            registration.update().catch(() => {});
-          } catch (_) {}
-        }
-      });
-
-      // 3. Chequeo recurrente cada 15 minutos mientras esté abierta
-      setInterval(() => {
-        if (!currentImage) {
-          try {
-            registration.update().catch(() => {});
-          } catch (_) {}
-        }
-      }, 15 * 60 * 1000);
-    }
-  },
-  onRegisterError(error) {
-    console.warn('[PWA] Error registrando el Service Worker:', error);
-  }
-});
-
-// Listener de seguridad ante cambio de controlador (skipWaiting aplicado)
 let refreshing = false;
 navigator.serviceWorker?.addEventListener('controllerchange', () => {
   if (refreshing) return;
-  // Never disrupt active user session if an image is loaded or user is not on home screen
-  const isIdle = !currentImage && document.getElementById('screen-home')?.classList.contains('active');
-  if (isIdle) {
+  if (isIdleOnHome()) {
     refreshing = true;
     window.location.reload();
-  } else {
-    console.log('[PWA] Nueva versión lista. Se mantendrá la pantalla actual sin interrumpir.');
   }
 });
 
-// Botón manual de comprobación y clic en el badge de versión
 const btnCheckUpdate = document.getElementById('btn-check-update');
 const appVersionBadge = document.getElementById('app-version-badge');
 
 async function handleCheckForUpdates() {
-  if (btnCheckUpdate) {
-    btnCheckUpdate.classList.add('checking');
-  }
+  btnCheckUpdate?.classList.add('checking');
   showToast('🔍 Buscando actualizaciones...');
-
   try {
-    if (!('serviceWorker' in navigator)) {
-      showToast('Este navegador no soporta Service Workers.');
-      return;
-    }
-
+    if (!('serviceWorker' in navigator)) { showToast('Este navegador no soporta Service Workers.'); return; }
     const reg = swRegistration || (await navigator.serviceWorker.getRegistration());
-    if (!reg) {
-      showToast('Iniciando Service Worker, prueba en unos segundos...');
-      return;
-    }
-
+    if (!reg) { showToast('Iniciando Service Worker, prueba en unos segundos...'); return; }
     await reg.update();
-
     if (reg.waiting || reg.installing) {
       showToast('⚡ ¡Nueva versión encontrada! Actualizando...', 2500);
-      if (updateServiceWorkerFn) {
-        updateServiceWorkerFn(true);
-      } else {
-        window.location.reload();
-      }
+      setTimeout(() => window.location.reload(), 1200);
     } else {
-      showToast('✅ Ya tienes la última versión (v2.5.1)', 2500);
+      showToast(`✅ Ya tienes la última versión (v${APP_VERSION})`, 2500);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);
     showToast('Sin conexión o no se pudo comprobar.', 2500);
   } finally {
-    if (btnCheckUpdate) {
-      btnCheckUpdate.classList.remove('checking');
-    }
+    btnCheckUpdate?.classList.remove('checking');
   }
 }
-
 btnCheckUpdate?.addEventListener('click', handleCheckForUpdates);
 appVersionBadge?.addEventListener('click', handleCheckForUpdates);
+
+// Precarga de los modelos en segundo plano para que el primer escaneo sea rápido
+const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1200));
+idle(() => preloadModels());
 
 /**
  * -------------------------------------------------------------
@@ -2650,7 +1538,7 @@ if (btnInstallPwa) {
 }
 
 window.addEventListener('appinstalled', () => {
-  console.log('Img2FEN installed successfully!');
+  console.log('Img2FEN instalada');
   if (btnInstallPwa) {
     btnInstallPwa.classList.add('hidden');
   }
