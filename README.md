@@ -10,6 +10,8 @@
 
 👉 **Probar en vivo:** **https://mosqueteroweb.github.io/img2fen/**
 
+🧪 **Nueva versión Pro (reconocimiento mejorado, fotos giradas y en perspectiva):** **https://mosqueteroweb.github.io/img2fen/pro/** — código en [`pwa/public/pro`](pwa/public/pro), comparativa en [`BENCHMARK.md`](pwa/public/pro/BENCHMARK.md).
+
 ---
 
 ## 🚀 Características Principales

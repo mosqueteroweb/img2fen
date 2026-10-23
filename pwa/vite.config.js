@@ -72,6 +72,9 @@ export default defineConfig({
       workbox: {
         importScripts: ['sw-share-target.js'],
         globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,wasm,onnx}'],
+        // Img2FEN Pro (pwa/public/pro) tiene su propio service worker: no precachearla ni redirigir sus rutas
+        globIgnores: ['pro/**'],
+        navigateFallbackDenylist: [/\/pro\//],
         maximumFileSizeToCacheInBytes: 35 * 1024 * 1024, // Allow up to 35MB for WASM and ONNX
         runtimeCaching: [
           {

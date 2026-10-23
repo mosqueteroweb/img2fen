@@ -1,0 +1,24 @@
+{
+  "name": "Img2FEN Pro - Diagramas a FEN de Ajedrez",
+  "short_name": "Img2FEN Pro",
+  "description": "Convierte fotos y diagramas de ajedrez (también girados o en perspectiva) a FEN de forma 100% offline y privada.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "lang": "es",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": { "files": [{ "name": "image", "accept": ["image/*", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] }] }
+  }
+}
