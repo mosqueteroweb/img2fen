@@ -259,7 +259,7 @@ export async function recognize(source, options = {}) {
   const s2d = det.w / src.w;
   const gray = toGray(det.data, det.w, det.h);
   mark('decode');
-  let quad, how;
+  let quad, how, quality = null;
   let fullDets = [];
 
   if (options.quad) {
@@ -294,7 +294,8 @@ export async function recognize(source, options = {}) {
     if (!best) return null;
     quad = best.quad.map(([x, y]) => [x / s2d, y / s2d]);
     how = best.name;
-    if (best.frac < 0.7 && best.ls < 1.2) return { failed: true, quad: scaleQuad(quad, 1 / src.scale) };
+    quality = { frac: best.frac, ls: best.ls, cs: best.cs };
+    if (best.frac < 0.7 && best.ls < 1.2) return { failed: true, quality, quad: scaleQuad(quad, 1 / src.scale) };
   }
 
   // Rotación del tablero en la imagen (las piezas deben quedar "de pie")
@@ -355,7 +356,7 @@ export async function recognize(source, options = {}) {
   const displayQuad = rollQuad(q, k).map(([x, y]) => [x / src.scale, y / src.scale]);
   return {
     squares, flipped, turn, conf: flipped ? [...conf].reverse() : conf,
-    quad: displayQuad, how, mono, ms: Math.round(performance.now() - t0), orient,
+    quad: displayQuad, how, mono, ms: Math.round(performance.now() - t0), orient, quality,
     debugRect: options.debug ? yoloBoard.extra.rect : undefined, timings: T,
   };
 }

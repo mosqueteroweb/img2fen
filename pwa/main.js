@@ -1,7 +1,7 @@
 import { Chess } from './js/vendor/chess.js';
 import { recognize } from './js/recognizer.js';
 
-const APP_VERSION = '3.0.1';
+const APP_VERSION = '3.0.2';
 
 /**
  * -------------------------------------------------------------
@@ -195,48 +195,63 @@ function toWorkingCanvas(img, maxDim) {
   return c;
 }
 
-function handleFile(file) {
+// Decodifica la foto y devuelve una copia reducida (máx. 2048 px) en un canvas.
+// 1º <img> (respeta la orientación EXIF en todos los navegadores); si falla, createImageBitmap.
+function decodeImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => {
+      img.onload = img.onerror = null;
+      try {
+        const c = toWorkingCanvas(img, 2048);
+        URL.revokeObjectURL(url);
+        resolve(c);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = async () => {
+      img.onload = img.onerror = null;
+      URL.revokeObjectURL(url);
+      try {
+        const bmp = await createImageBitmap(file);
+        const c = toWorkingCanvas(bmp, 2048);
+        bmp.close?.();
+        resolve(c);
+      } catch (e) { reject(e); }
+    };
+    img.src = url;
+  });
+}
+
+async function handleFile(file) {
   if (!file) return;
   pickerOpenSince = 0;
   safeStorage.remove('img2fen_picking');
-
+  showLoading('Cargando imagen...');
+  let canvas;
   try {
-    showLoading('Cargando imagen...');
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
-
-    img.onload = async () => {
-      try {
-        URL.revokeObjectURL(objectUrl);
-        // Copia reducida (máx. 2048 px): una foto de móvil de 12-50 MP ocupa cientos de MB decodificada
-        currentImage = toWorkingCanvas(img, 2048);
-        img.src = '';
-        resetCropState();
-        await processImageDirectlyToResult();
-      } catch (err) {
-        console.error('Error procesando imagen cargada:', err);
-        hideLoading();
-        showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
-        showScreen('crop');
-        requestAnimationFrame(() => {
-          renderCanvas();
-          renderPerspectiveGrid();
-        });
-      }
-    };
-
-    img.onerror = (err) => {
-      URL.revokeObjectURL(objectUrl);
-      hideLoading();
-      console.error('Error al decodificar la imagen:', err);
-      showToast('⚠️ No se pudo leer el archivo de imagen.', 3000);
-    };
-
-    img.src = objectUrl;
+    canvas = await decodeImageFile(file);
   } catch (err) {
     hideLoading();
-    console.error('Error en handleFile:', err);
-    showToast('⚠️ Error al abrir el archivo de imagen.', 3000);
+    console.error('Error al decodificar la imagen:', err, file && file.type);
+    const kind = (file && (file.type || file.name.split('.').pop())) || 'desconocido';
+    showToast(`⚠️ No se pudo leer el archivo de imagen (formato: ${kind}).`, 4500);
+    return;
+  }
+  try {
+    currentImage = canvas;
+    resetCropState();
+    await processImageDirectlyToResult();
+  } catch (err) {
+    console.error('Error procesando imagen cargada:', err);
+    hideLoading();
+    showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
+    showScreen('crop');
+    requestAnimationFrame(() => {
+      renderCanvas();
+      renderPerspectiveGrid();
+    });
   }
 }
 
