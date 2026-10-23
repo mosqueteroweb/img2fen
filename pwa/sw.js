@@ -1,5 +1,5 @@
 // Service Worker de Img2FEN: funciona 100% offline y recibe imágenes compartidas (Web Share Target).
-const VERSION = '3.0.0';
+const VERSION = '3.0.1';
 const CACHE = `img2fen-v${VERSION}`;
 const SHARED = 'img2fen-shared-data';
 const ASSETS = [

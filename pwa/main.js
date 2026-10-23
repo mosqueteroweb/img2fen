@@ -1,7 +1,7 @@
 import { Chess } from './js/vendor/chess.js';
-import { recognize, preloadModels } from './js/recognizer.js';
+import { recognize } from './js/recognizer.js';
 
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.0.1';
 
 /**
  * -------------------------------------------------------------
@@ -182,8 +182,23 @@ function hideLoading() {
  * IMAGE LOADING & CROP CANVAS
  * -------------------------------------------------------------
  */
+function toWorkingCanvas(img, maxDim) {
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  const s = Math.min(1, maxDim / Math.max(w0, h0));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w0 * s));
+  c.height = Math.max(1, Math.round(h0 * s));
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
 function handleFile(file) {
   if (!file) return;
+  pickerOpenSince = 0;
+  safeStorage.remove('img2fen_picking');
 
   try {
     showLoading('Cargando imagen...');
@@ -193,7 +208,9 @@ function handleFile(file) {
     img.onload = async () => {
       try {
         URL.revokeObjectURL(objectUrl);
-        currentImage = img;
+        // Copia reducida (máx. 2048 px): una foto de móvil de 12-50 MP ocupa cientos de MB decodificada
+        currentImage = toWorkingCanvas(img, 2048);
+        img.src = '';
         resetCropState();
         await processImageDirectlyToResult();
       } catch (err) {
@@ -799,7 +816,9 @@ async function processImageDirectlyToResult() {
   if (!currentImage) return;
   try {
     showLoading('Reconociendo posición con IA...');
+    safeStorage.set('img2fen_busy', String(Date.now()));
     const r = await recognize(currentImage, { mode: currentEngineMode, onProgress: progressText });
+    safeStorage.remove('img2fen_busy');
     if (!r || r.failed) {
       hideLoading();
       lastQuad = r && r.quad ? r.quad : null;
@@ -820,6 +839,7 @@ async function processImageDirectlyToResult() {
     showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
     openCropScreen();
   } finally {
+    safeStorage.remove('img2fen_busy');
     hideLoading();
   }
 }
@@ -865,7 +885,9 @@ btnProcessScan?.addEventListener('click', async () => {
   try {
     showLoading('Re-analizando con el nuevo encuadre...');
     const quad = [gridCorners.tl, gridCorners.tr, gridCorners.br, gridCorners.bl].map(viewportToImage);
+    safeStorage.set('img2fen_busy', String(Date.now()));
     const r = await recognize(currentImage, { quad, mode: currentEngineMode, onProgress: progressText });
+    safeStorage.remove('img2fen_busy');
     if (!r || r.failed) throw new Error('Las 4 esquinas no forman un tablero válido.');
     lastQuad = r.quad;
     applyRecognition(r);
@@ -874,6 +896,7 @@ btnProcessScan?.addEventListener('click', async () => {
     console.error('Classification error:', err);
     showToast('⚠️ ' + err.message, 3500);
   } finally {
+    safeStorage.remove('img2fen_busy');
     hideLoading();
   }
 });
@@ -1334,6 +1357,32 @@ function loadFenIntoBoard(fen) {
  * INPUT HANDLERS
  * -------------------------------------------------------------
  */
+/* Seguimiento del selector de fotos y "migas" para diagnosticar cierres del navegador en el móvil */
+let pickerOpenSince = 0;
+const safeStorage = {
+  get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  remove(k) { try { localStorage.removeItem(k); } catch (_) {} },
+};
+[inputCamera, inputGallery].forEach((inp) => inp?.addEventListener('click', () => {
+  pickerOpenSince = Date.now();
+  safeStorage.set('img2fen_picking', String(Date.now()));
+}));
+// Si se vuelve a la app sin recargar (selector cancelado), la miga ya no sirve
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') setTimeout(() => safeStorage.remove('img2fen_picking'), 3000);
+});
+(function reportInterruptedSession() {
+  const recent = (k) => { const t = Number(safeStorage.get(k) || 0); safeStorage.remove(k); return t && Date.now() - t < 10 * 60 * 1000; };
+  const busy = recent('img2fen_busy');
+  const picking = recent('img2fen_picking');
+  if (busy) {
+    setTimeout(() => showToast('⚠️ El navegador cerró la app mientras analizaba la foto (falta de memoria). Prueba de nuevo o cierra otras apps.', 6000), 600);
+  } else if (picking) {
+    setTimeout(() => showToast('⚠️ El navegador recargó la app mientras elegías la foto. Vuelve a intentarlo con «Abrir Imagen».', 6000), 600);
+  }
+})();
+
 inputCamera.addEventListener('change', (e) => {
   if (e.target.files && e.target.files[0]) {
     handleFile(e.target.files[0]);
@@ -1466,7 +1515,8 @@ if ('serviceWorker' in navigator) {
 let refreshing = false;
 navigator.serviceWorker?.addEventListener('controllerchange', () => {
   if (refreshing) return;
-  if (isIdleOnHome()) {
+  // No recargar mientras el usuario está eligiendo una foto (se perdería la imagen)
+  if (isIdleOnHome() && Date.now() - pickerOpenSince > 120000) {
     refreshing = true;
     window.location.reload();
   }
@@ -1500,8 +1550,8 @@ btnCheckUpdate?.addEventListener('click', handleCheckForUpdates);
 appVersionBadge?.addEventListener('click', handleCheckForUpdates);
 
 // Precarga de los modelos en segundo plano para que el primer escaneo sea rápido
-const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1200));
-idle(() => preloadModels());
+// Los modelos se cargan al analizar la primera imagen (no al abrir la app) para que el navegador
+// del móvil no cierre la pestaña por memoria mientras está abierta la cámara o la galería.
 
 /**
  * -------------------------------------------------------------

@@ -254,7 +254,7 @@ export async function recognize(source, options = {}) {
   const T = {}; let tm = t0; const mark = (k) => { const n = performance.now(); T[k] = Math.round(n - tm); tm = n; };
   const progress = options.onProgress || (() => {});
   const mode = options.mode || 'auto';
-  const src = imageToData(source, 2048); // para rectificar
+  const src = imageToData(source, 1600); // para rectificar
   const det = imageToData(source, 1024); // para detectar
   const s2d = det.w / src.w;
   const gray = toGray(det.data, det.w, det.h);
@@ -271,6 +271,7 @@ export async function recognize(source, options = {}) {
     const before = checkerScore(gray, det.w, det.h, q0), after = checkerScore(gray, det.w, det.h, r.quad);
     const qd = (after.frac >= before.frac - 0.02) ? r.quad : q0;
     quad = qd.map(([x, y]) => [x / s2d, y / s2d]);
+    clearGradCache();
     how = 'manual';
   } else {
     progress('Buscando el tablero...'); await tick();
@@ -289,6 +290,7 @@ export async function recognize(source, options = {}) {
     progress('Encajando la cuadrícula...'); await tick();
     const best = chooseBoardQuad(gray, det.w, det.h, candidates);
     mark('lattice+refine');
+    clearGradCache();
     if (!best) return null;
     quad = best.quad.map(([x, y]) => [x / s2d, y / s2d]);
     how = best.name;
