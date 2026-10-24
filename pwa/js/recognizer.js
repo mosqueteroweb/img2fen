@@ -394,7 +394,8 @@ export async function recognize(source, options = {}) {
     quad = best.quad.map(([x, y]) => [x / s2d, y / s2d]);
     how = best.name;
     quality = { frac: best.frac, ls: best.ls, cs: best.cs };
-    if (best.frac < 0.7 && best.ls < 1.2) return { failed: true, quality, quad: scaleQuad(quad, 1 / src.scale) };
+    // Sin damero claro (calibrado con fotos sin tablero: cs ≤ 0,23; con tablero: cs ≥ 0,66) -> encuadre manual
+    if (best.cs < 0.4 && best.frac < 0.65) return { failed: true, quality, quad: scaleQuad(quad, 1 / src.scale) };
   }
 
   // Rotación del tablero en la imagen (las piezas deben quedar "de pie")
