@@ -236,7 +236,7 @@ async function handleFile(file) {
     hideLoading();
     console.error('Error al decodificar la imagen:', err, file && file.type);
     const kind = (file && (file.type || file.name.split('.').pop())) || 'desconocido';
-    showToast(`⚠️ No se pudo leer el archivo de imagen (formato: ${kind}).`, 4500);
+    showError('No se pudo leer la imagen', `El formato del archivo (${kind}) no es compatible o el archivo está dañado. Prueba con una captura de pantalla o guarda la foto como JPG o PNG.`);
     return;
   }
   try {
@@ -246,7 +246,7 @@ async function handleFile(file) {
   } catch (err) {
     console.error('Error procesando imagen cargada:', err);
     hideLoading();
-    showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
+    showError('Imagen no reconocida', 'Ajusta las 4 esquinas sobre el tablero y pulsa «Re-analizar con este Encuadre».');
     showScreen('crop');
     requestAnimationFrame(() => {
       renderCanvas();
@@ -840,7 +840,7 @@ async function processImageDirectlyToResult() {
       if (!lastQuad) {
         gridCorners = { tl: { x: 10, y: 10 }, tr: { x: 90, y: 10 }, br: { x: 90, y: 90 }, bl: { x: 10, y: 90 } };
       }
-      showToast('⚠️ No encontré el tablero con claridad. Ajusta las 4 esquinas.', 4000);
+      showError('No encontré el tablero', 'Arrastra las 4 esquinas hasta los bordes del tablero y pulsa «Re-analizar con este Encuadre».');
       openCropScreen();
       return;
     }
@@ -851,7 +851,7 @@ async function processImageDirectlyToResult() {
   } catch (err) {
     console.error('Error en el reconocimiento:', err);
     hideLoading();
-    showToast('⚠️ Imagen no reconocida. Ajusta el encuadre manualmente.', 3500);
+    showError('Imagen no reconocida', 'Ajusta las 4 esquinas sobre el tablero y pulsa «Re-analizar con este Encuadre».');
     openCropScreen();
   } finally {
     safeStorage.remove('img2fen_busy');
@@ -879,7 +879,7 @@ async function autoDetectChessboardWithAI(manual = false) {
     const r = await recognize(currentImage, { mode: currentEngineMode, onProgress: progressText });
     hideLoading();
     if (!r || r.failed || !r.quad) {
-      if (manual) showToast('No se detectó un tablero claro en la foto.');
+      if (manual) showError('No encontré el tablero', 'No se detectó un tablero claro en la foto. Coloca las 4 esquinas a mano.');
       return;
     }
     setCropFromQuad(r.quad);
@@ -889,7 +889,7 @@ async function autoDetectChessboardWithAI(manual = false) {
   } catch (err) {
     hideLoading();
     console.warn('[PWA] Error en la detección automática:', err);
-    if (manual) showToast('Error al analizar la imagen.');
+    if (manual) showError('Error al analizar la imagen', 'Vuelve a intentarlo o coloca las 4 esquinas a mano.');
   }
 }
 
@@ -909,7 +909,7 @@ btnProcessScan?.addEventListener('click', async () => {
     showToast('✨ Posición actualizada con el nuevo encuadre', 2500);
   } catch (err) {
     console.error('Classification error:', err);
-    showToast('⚠️ ' + err.message, 3500);
+    showError('No se pudo analizar el encuadre', err.message);
   } finally {
     safeStorage.remove('img2fen_busy');
     hideLoading();
@@ -930,7 +930,7 @@ function renderBoard() {
   const { invalidSquares, inCheckSquare } = validateCurrentPosition();
 
   if (viewSideLabel) {
-    viewSideLabel.textContent = isBoardViewFlipped ? 'Negras' : 'Blancas';
+    viewSideLabel.textContent = isBoardViewFlipped ? 'Blancas' : 'Negras';
   }
 
   document.getElementById('uncertain-hint')?.classList.toggle('hidden', uncertainSquares.size === 0);
@@ -990,14 +990,15 @@ btnFlipView?.addEventListener('click', () => {
   );
 });
 
+// «Corregir lado»: la IA puso las blancas donde van las negras. Se giran las piezas 180° (cambia el FEN)
+// y se mantiene la vista, para que el cambio se vea en el tablero.
 btnInvertBoard?.addEventListener('click', () => {
   currentSquares.reverse();
   uncertainSquares = new Set([...uncertainSquares].map((i) => 63 - i));
-  isBoardViewFlipped = !isBoardViewFlipped;
   renderBoard();
   updateFenDisplay();
   saveToHistory(getFenString());
-  showToast('↕️ Filas del tablero invertidas (180°)', 2000);
+  showToast('⚠️ Lado corregido: piezas giradas 180°', 2000);
 });
 
 /**
@@ -1392,9 +1393,9 @@ document.addEventListener('visibilitychange', () => {
   const busy = recent('img2fen_busy');
   const picking = recent('img2fen_picking');
   if (busy) {
-    setTimeout(() => showToast('⚠️ El navegador cerró la app mientras analizaba la foto (falta de memoria). Prueba de nuevo o cierra otras apps.', 6000), 600);
+    setTimeout(() => showError('La app se cerró mientras analizaba', 'El navegador la cerró por falta de memoria. Prueba de nuevo o cierra otras apps.'), 600);
   } else if (picking) {
-    setTimeout(() => showToast('⚠️ El navegador recargó la app mientras elegías la foto. Vuelve a intentarlo con «Abrir Imagen».', 6000), 600);
+    setTimeout(() => showError('La app se recargó', 'El navegador la recargó mientras elegías la foto. Vuelve a intentarlo con «Abrir Imagen».'), 600);
   }
 })();
 
@@ -1486,6 +1487,29 @@ window.addEventListener('resize', () => {
  * TOAST NOTIFICATIONS
  * -------------------------------------------------------------
  */
+let errorTimer = null;
+function closeError() {
+  clearTimeout(errorTimer);
+  document.getElementById('error-modal')?.classList.add('hidden');
+}
+// Error visible: recuadro grande con «Entendido» que se cierra solo a los 3 segundos
+function showError(title, text, duration = 3000) {
+  const modal = document.getElementById('error-modal');
+  if (!modal) { showToast(`⚠️ ${title}. ${text}`, duration); return; }
+  document.getElementById('error-title').textContent = title;
+  document.getElementById('error-text').textContent = text;
+  const bar = document.getElementById('error-timer-bar');
+  bar.style.transition = 'none'; bar.style.width = '100%';
+  modal.classList.remove('hidden');
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    bar.style.transition = `width ${duration}ms linear`; bar.style.width = '0%';
+  }));
+  clearTimeout(errorTimer);
+  errorTimer = setTimeout(closeError, duration);
+}
+document.getElementById('btn-error-ok')?.addEventListener('click', closeError);
+document.getElementById('error-modal')?.addEventListener('click', (e) => { if (e.target.id === 'error-modal') closeError(); });
+
 let toastTimer = null;
 function showToast(message, duration = 3000) {
   const toast = document.getElementById('app-toast');

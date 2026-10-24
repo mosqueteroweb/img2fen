@@ -1218,3 +1218,28 @@ body {
   .crop-controls { flex-wrap: wrap; gap: 10px; }
   .quick-fit-controls, .zoom-controls { flex-wrap: wrap; }
 }
+
+/* ---------- v3.1: diálogo de error ---------- */
+.error-overlay { z-index: 3000; }
+.error-card {
+  max-width: 420px;
+  text-align: center;
+  border: 2px solid #e5484d;
+  padding: 24px 22px 18px;
+}
+.error-icon { font-size: 2.6rem; line-height: 1; margin-bottom: 8px; }
+.error-card h3 { font-size: 1.3rem; margin: 4px 0 10px; color: #ff8a8a; }
+.error-card p { font-size: 1.05rem; line-height: 1.45; margin: 0 0 18px; color: var(--text-primary, #fff); }
+.error-ok-btn {
+  width: 100%;
+  min-height: 48px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  background: #e5484d;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.error-timer { height: 4px; margin-top: 12px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
+#error-timer-bar { height: 100%; width: 100%; background: #e5484d; }

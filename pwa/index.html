@@ -163,8 +163,8 @@
               </div>
             </div>
             <div class="board-view-controls">
-              <button id="btn-flip-view" class="ctrl-btn board-ctrl-btn" title="Cambiar vista entre Blancas abajo y Negras abajo sin alterar el FEN" aria-label="Girar vista del tablero">🔄 Vista: <span id="view-side-label">Blancas</span></button>
-              <button id="btn-invert-board" class="ctrl-btn board-ctrl-btn" title="Invertir las filas 180° si los peones avanzan en sentido contrario" aria-label="Invertir posición 180 grados">↕️ Invertir 180°</button>
+              <button id="btn-flip-view" class="ctrl-btn board-ctrl-btn" title="Ver el tablero desde el lado del otro jugador (la posición no cambia)" aria-label="Cambiar el lado desde el que se ve el tablero">👁 Ver desde <span id="view-side-label">Negras</span></button>
+              <button id="btn-invert-board" class="ctrl-btn board-ctrl-btn" title="Úsalo si la IA puso las blancas donde van las negras: gira las piezas 180° y corrige el FEN" aria-label="Corregir el lado de las piezas">⚠️ Corregir lado</button>
             </div>
             <p class="board-hint">💡 Toca cualquier casilla para corregir o cambiar una pieza.</p>
             <p id="uncertain-hint" class="board-hint uncertain-hint hidden">🟡 Las casillas marcadas en amarillo son las que la IA ve con menos seguridad: revísalas.</p>
@@ -239,6 +239,17 @@
           <button id="btn-clear-square" class="modal-btn clear-btn">Casilla Vacía</button>
           <button id="btn-cancel-modal" class="modal-btn cancel-btn">Cancelar</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Error Dialog (se cierra solo a los 3 s) -->
+    <div id="error-modal" class="modal-overlay error-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="error-title" aria-describedby="error-text">
+      <div class="modal-card error-card">
+        <div class="error-icon" aria-hidden="true">⚠️</div>
+        <h3 id="error-title">Algo ha fallado</h3>
+        <p id="error-text"></p>
+        <button id="btn-error-ok" class="modal-btn error-ok-btn">Entendido</button>
+        <div class="error-timer" aria-hidden="true"><div id="error-timer-bar"></div></div>
       </div>
     </div>
 
