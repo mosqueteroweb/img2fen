@@ -7,11 +7,15 @@
 import * as ort from './vendor/ort.wasm.min.mjs';
 import { toGray, warpRGBA, colorfulness, downscaleBox } from './imageops.js';
 import { homographyFromQuad, invert3x3, applyH, squareSize, orderQuad, rollQuad, quadFromAABB } from './geometry.js';
-import { chooseBoardQuad, refineQuad, gradField, clearGradCache, quadFromMask, checkerScore } from './detector.js';
+import { chooseBoardQuad, refineQuad, gradField, clearGradCache, quadFromMask, checkerScore, refineCandidate, EXCELLENT } from './detector.js';
+import { orderQuad as _oq } from './geometry.js';
 
 const ROOT = new URL('../', import.meta.url).href;
 ort.env.wasm.wasmPaths = `${ROOT}wasm/`;
-ort.env.wasm.numThreads = 1;
+// Multihilo cuando la página está aislada (crossOriginIsolated, lo activa el service worker); si no, 1 hilo
+export const THREADS = (globalThis.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined')
+  ? Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 0)) : 1;
+ort.env.wasm.numThreads = THREADS;
 ort.env.wasm.proxy = false;
 
 export const LABELS = '1KQRBNPkqrbnp'; // índice 0 = vacía
@@ -32,6 +36,8 @@ export function preloadModels() {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+export const PROF = {};
+const prof = (k, t0) => { PROF[k] = (PROF[k] || 0) + performance.now() - t0; };
 
 /* ------------------------- utilidades de imagen ------------------------- */
 function makeCanvas(w, h) {
@@ -125,10 +131,13 @@ async function tileProbs(src, quad, ks, tta) {
   const n = ks.length * jit.length;
   const tiles = new Float32Array(n * 64 * 1024);
   let b = 0;
+  let t0 = performance.now();
   for (const k of ks) for (const [dx, dy, sc] of jit) {
     boardToTiles(warpRGBA(src, jitterQuad(quad, dx, dy, sc), k, 512, 0, 1), tiles, b * 64 * 1024); b++;
   }
+  prof('tileWarp', t0); t0 = performance.now();
   const probs = await runTiles(tiles, n * 64);
+  prof('tileNet', t0);
   const res = [];
   b = 0;
   for (let ki = 0; ki < ks.length; ki++) {
@@ -139,10 +148,91 @@ async function tileProbs(src, quad, ks, tta) {
   return res;
 }
 
+// Variante rápida: rotación con las 16 casillas más "ocupadas" y TTA completo solo en casillas con pieza o dudosas
+function tileBusyness(tiles, offset) {
+  const out = new Float32Array(64);
+  for (let t = 0; t < 64; t++) {
+    let s = 0, s2 = 0; const o = offset + t * 1024;
+    for (let i = 0; i < 1024; i++) { const v = tiles[o + i]; s += v; s2 += v * v; }
+    const m = s / 1024; out[t] = s2 / 1024 - m * m;
+  }
+  return out;
+}
+const NBUSY = 16;
+const ROT_MARGIN = 0.3;
+async function tileStageFast(src, quad) {
+  let t0 = performance.now();
+  const base = new Float32Array(4 * 64 * 1024);
+  for (let k = 0; k < 4; k++) boardToTiles(warpRGBA(src, quad, k, 512, 0, 1), base, k * 64 * 1024);
+  prof('tileWarp', t0);
+  // 1) rotación: 16 casillas más ocupadas de cada giro
+  const sel = [];
+  const sub = new Float32Array(4 * NBUSY * 1024);
+  for (let k = 0; k < 4; k++) {
+    const bz = tileBusyness(base, k * 64 * 1024);
+    const idx = [...Array(64).keys()].sort((a, b) => bz[b] - bz[a]).slice(0, NBUSY);
+    sel.push(idx);
+    idx.forEach((t, j) => sub.set(base.subarray(k * 65536 + t * 1024, k * 65536 + (t + 1) * 1024), (k * NBUSY + j) * 1024));
+  }
+  t0 = performance.now();
+  const pr = await runTiles(sub, 4 * NBUSY);
+  prof('tileNet', t0);
+  const kscore = [0, 1, 2, 3].map((k) => {
+    let s = 0;
+    for (let j = 0; j < NBUSY; j++) { let m = 0; for (let c = 0; c < 13; c++) m = Math.max(m, pr[(k * NBUSY + j) * 13 + c]); s += Math.log(m + 1e-6); }
+    return s / NBUSY;
+  });
+  return { base, kscore, sel, pr };
+}
+async function tilesForK(src, quad, k, stage) {
+  // 2) pasada base (sin desplazamiento) de las 64 casillas del giro elegido
+  const P0 = new Float32Array(64 * 13);
+  const known = new Map(stage.sel[k].map((t, j) => [t, j]));
+  const rest = [...Array(64).keys()].filter((t) => !known.has(t));
+  const buf = new Float32Array(rest.length * 1024);
+  rest.forEach((t, j) => buf.set(stage.base.subarray(k * 65536 + t * 1024, k * 65536 + (t + 1) * 1024), j * 1024));
+  let t0 = performance.now();
+  const pr = rest.length ? await runTiles(buf, rest.length) : new Float32Array(0);
+  prof('tileNet', t0);
+  rest.forEach((t, j) => P0.set(pr.subarray(j * 13, j * 13 + 13), t * 13));
+  known.forEach((j, t) => P0.set(stage.pr.subarray((k * NBUSY + j) * 13, (k * NBUSY + j) * 13 + 13), t * 13));
+  // 3) TTA completo solo donde hay pieza o duda
+  const need = [];
+  for (let t = 0; t < 64; t++) {
+    let m = 0, a = 0; for (let c = 0; c < 13; c++) if (P0[t * 13 + c] > m) { m = P0[t * 13 + c]; a = c; }
+    if (a !== 0 || m < 0.97) need.push(t);
+  }
+  const P = Float32Array.from(P0);
+  if (need.length) {
+    const jit = TTA.slice(1);
+    const tb = new Float32Array(jit.length * need.length * 1024);
+    t0 = performance.now();
+    const tmp = new Float32Array(64 * 1024);
+    jit.forEach(([dx, dy, sc], ji) => {
+      boardToTiles(warpRGBA(src, jitterQuad(quad, dx, dy, sc), k, 512, 0, 1), tmp, 0);
+      need.forEach((t, j) => tb.set(tmp.subarray(t * 1024, (t + 1) * 1024), (ji * need.length + j) * 1024));
+    });
+    prof('tileWarp', t0); t0 = performance.now();
+    const pj = await runTiles(tb, jit.length * need.length);
+    prof('tileNet', t0);
+    need.forEach((t, j) => {
+      for (let c = 0; c < 13; c++) {
+        let s = P0[t * 13 + c];
+        for (let ji = 0; ji < jit.length; ji++) s += pj[(ji * need.length + j) * 13 + c];
+        P[t * 13 + c] = s / TTA.length;
+      }
+    });
+  }
+  return P;
+}
+
 const YSIZE = 544, YMARGIN = 48;
 async function yoloOnBoard(src, quad, k) {
+  let t0 = performance.now();
   const rect = warpRGBA(src, quad, k, YSIZE, YMARGIN, 2);
+  prof('yoloWarp', t0); t0 = performance.now();
   const dets = await runYolo(rect, 0.05);
+  prof('yoloRect', t0);
   const P = new Float32Array(64 * 13);
   const extra = { rank1: null, lmEnd: [], lmStart: [], rect };
   for (const d of dets) {
@@ -229,10 +319,12 @@ export function orientationScore(grid) {
   return llr;
 }
 function decideOrientation(grid, rank1) {
-  if (rank1 && rank1.conf > 0.45) return { flipped: rank1.v < 0.5, why: 'rank1' };
-  let score = orientationScore(grid);
-  if (rank1 && rank1.conf > 0.2) score += (rank1.v > 0.5 ? 1 : -1) * 2;
-  return { flipped: score < 0, why: 'pieces', score };
+  // La posición de las piezas y el marcador «1» de YOLO suman evidencia; el marcador ya no decide solo
+  // (a veces confunde otros textos con el «1»), pero pesa mucho cuando las piezas no son concluyentes.
+  const pieces = orientationScore(grid);
+  let score = pieces;
+  if (rank1 && rank1.conf > 0.2) score += (rank1.v > 0.5 ? 1 : -1) * 10 * Math.min(1, rank1.conf);
+  return { flipped: score < 0, why: rank1 && rank1.conf > 0.2 ? 'pieces+rank1' : 'pieces', score, pieces };
 }
 
 function decideTurn(grid, flipped, lmEnd) {
@@ -276,19 +368,26 @@ export async function recognize(source, options = {}) {
   } else {
     progress('Buscando el tablero...'); await tick();
     const candidates = [];
+    let prior = null;
+    clearGradCache();
     try {
       fullDets = await runYolo(det, 0.1);
       const boards = fullDets.filter((d) => d.cls === 0).sort((a, b) => b.conf - a.conf);
-      if (boards[0]) candidates.push({ name: 'yolo', quad: quadFromAABB(boards[0].x1, boards[0].y1, boards[0].x2, boards[0].y2) });
+      if (boards[0]) {
+        const yq = { name: 'yolo', quad: _oq(quadFromAABB(boards[0].x1, boards[0].y1, boards[0].x2, boards[0].y2)) };
+        prior = refineCandidate(gray, det.w, det.h, yq);
+      }
     } catch (e) { console.warn('YOLO no disponible', e); }
-    try {
-      const prob = await runUnet(det);
-      const q = quadFromMask(prob, det.w, det.h);
-      if (q) candidates.push({ name: 'unet', quad: q });
-    } catch (e) { console.warn('U-Net no disponible', e); }
+    if (!EXCELLENT(prior)) {
+      try {
+        const prob = await runUnet(det);
+        const q = quadFromMask(prob, det.w, det.h);
+        if (q) candidates.push({ name: 'unet', quad: q });
+      } catch (e) { console.warn('U-Net no disponible', e); }
+    }
     mark('nets');
     progress('Encajando la cuadrícula...'); await tick();
-    const best = chooseBoardQuad(gray, det.w, det.h, candidates);
+    const best = chooseBoardQuad(gray, det.w, det.h, candidates, null, prior);
     mark('lattice+refine');
     clearGradCache();
     if (!best) return null;
@@ -301,29 +400,31 @@ export async function recognize(source, options = {}) {
   // Rotación del tablero en la imagen (las piezas deben quedar "de pie")
   progress('Leyendo las piezas...'); await tick();
   const q = orderQuad(quad);
-  const k4 = await tileProbs(src, q, [0, 1, 2, 3], false);
-  const kscore = k4.map((P) => { let s = 0; for (let i = 0; i < 64; i++) { let m = 0; for (let c = 0; c < 13; c++) m = Math.max(m, P[i * 13 + c]); s += Math.log(m + 1e-6); } return s / 64; });
+  const stage = await tileStageFast(src, q);
+  const kscore = stage.kscore;
   const order = [0, 1, 2, 3].sort((a, b) => kscore[b] - kscore[a]);
   let k = order[0];
   mark('rot4');
   let yoloBoard = null;
-  if (kscore[order[0]] - kscore[order[1]] < 0.08) {
+  if (kscore[order[0]] - kscore[order[1]] < ROT_MARGIN) {
     const cand = [order[0], order[1]];
     const ys = [];
     for (const kk of cand) {
       const yb = await yoloOnBoard(src, q, kk);
       let s = 0; for (let i = 0; i < 64; i++) { let m = 0; for (let c = 0; c < 13; c++) m = Math.max(m, yb.P[i * 13 + c]); if (m > 0.25) s += m; }
-      ys.push({ kk, yb, score: kscore[kk] + 0.05 * s });
+      ys.push({ kk, yb, score: kscore[kk] * NBUSY / 64 + 0.05 * s });
     }
     ys.sort((a, b) => b.score - a.score);
     k = ys[0].kk; yoloBoard = ys[0].yb;
   }
-  const [Pt] = await tileProbs(src, q, [k], true);
-  if (!yoloBoard) yoloBoard = await yoloOnBoard(src, q, k);
+  const Pt = await tilesForK(src, q, k, stage);
+  const colour = yoloBoard ? colorfulness(yoloBoard.extra.rect) : colorfulness(warpRGBA(src, q, k, 128, 8, 1));
+  const mono = mode === 'books' || (mode === 'auto' && colour < 14);
+  // En blanco y negro YOLO no pesa en la decisión de piezas: se omite su segunda pasada
+  if (!yoloBoard && !mono) yoloBoard = await yoloOnBoard(src, q, k);
+  if (!yoloBoard) yoloBoard = { P: new Float32Array(64 * 13), extra: { rank1: null, lmEnd: [], lmStart: [], rect: null } };
   mark('classify');
 
-  const colour = colorfulness(yoloBoard.extra.rect);
-  const mono = mode === 'books' || (mode === 'auto' && colour < 14);
   const wy = mode === 'screens' ? 0.6 : (mono ? 0 : 0.4);
   const E = yoloToProbs(yoloBoard.P);
   const L = new Float64Array(64 * 13);

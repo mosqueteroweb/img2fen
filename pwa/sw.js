@@ -12,6 +12,17 @@ const ASSETS = [
   ...['wK', 'wQ', 'wR', 'wB', 'wN', 'wP', 'bK', 'bQ', 'bR', 'bB', 'bN', 'bP'].map((p) => `./pieces/${p}.svg`),
 ];
 
+// Aislamiento de origen (COOP/COEP) añadido por el propio service worker: GitHub Pages no permite configurar
+// cabeceras y sin aislamiento el navegador no deja usar varios hilos (SharedArrayBuffer) en los modelos.
+function isolate(res) {
+  if (!res || res.status === 0 || res.type === 'opaque') return res;
+  const h = new Headers(res.headers);
+  h.set('Cross-Origin-Opener-Policy', 'same-origin');
+  h.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  h.set('Cross-Origin-Resource-Policy', 'same-origin');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -59,13 +70,13 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(CACHE);
     const isNav = req.mode === 'navigate';
     const hit = await cache.match(isNav ? './index.html' : req, { ignoreSearch: isNav });
-    if (hit) return hit;
+    if (hit) return isolate(hit);
     try {
       const res = await fetch(req);
       if (res.ok && res.type === 'basic') cache.put(req, res.clone());
-      return res;
+      return isolate(res);
     } catch (err) {
-      if (isNav) return (await cache.match('./index.html')) || Response.error();
+      if (isNav) { const idx = await cache.match('./index.html'); return idx ? isolate(idx) : Response.error(); }
       throw err;
     }
   })());

@@ -1569,6 +1569,18 @@ function showToast(message, duration = 3000) {
  */
 let swRegistration = null;
 
+// Cuando el service worker ya controla la página pero aún no está aislada (primera visita), recargar una vez
+// para activar el modo multihilo. Solo si el usuario está en la pantalla de inicio sin imagen.
+(function ensureIsolation() {
+  try {
+    if (!('serviceWorker' in navigator) || window.crossOriginIsolated) return;
+    if (!navigator.serviceWorker.controller) return;
+    if (sessionStorage.getItem('img2fen_coi_reload')) return;
+    sessionStorage.setItem('img2fen_coi_reload', '1');
+    setTimeout(() => { if (isIdleOnHome()) window.location.reload(); }, 300);
+  } catch (_) {}
+})();
+
 function isIdleOnHome() {
   return !currentImage && document.getElementById('screen-home')?.classList.contains('active');
 }

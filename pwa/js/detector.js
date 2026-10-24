@@ -313,8 +313,35 @@ export function quadFromMask(prob, W, H, thr = 0.5) {
 }
 
 /* ------------------------- Selección final ------------------------- */
-export function chooseBoardQuad(gray, w, h, candidates, log = null) {
-  clearGradCache();
+// Atajo: si un candidato (YOLO/U-Net) ya encaja como un damero casi perfecto, no hace falta buscar la retícula
+export const EXCELLENT = (r) => r && r.frac >= 0.98 && r.cs >= 3 && r.ls >= 2.0;
+
+export function refineCandidate(gray, w, h, c, log) {
+  const sq = squareSize(c.quad);
+  if (!(sq > 3)) return null;
+  const G = gradField(gray, w, h, Math.max(0.8, sq / 10));
+  const r1 = refineQuad(G, c.quad);
+  const G2 = gradField(gray, w, h, Math.max(0.6, squareSize(r1.quad) / 16));
+  const r2 = refineQuad(G2, r1.quad, 0.1, 0.02);
+  let best = null;
+  for (const i0 of [-1, 0, 1]) for (const j0 of [-1, 0, 1]) {
+    const qq = extrapolateQuad(r2.quad, i0, j0, i0 + 8, j0 + 8);
+    const sc = totalScore(G2, gray, w, h, qq);
+    if (log) log.push({ name: c.name, i0, j0, ...sc });
+    if (!best || sc.total > best.total) best = { ...sc, quad: qq, name: c.name };
+  }
+  return best;
+}
+
+export function chooseBoardQuad(gray, w, h, candidates, log = null, prior = null) {
+  let best = prior;
+  const keep = (r) => { if (r && (!best || r.total > best.total)) best = r; };
+  if (EXCELLENT(best)) return { ...best, shortcut: true };
+  const given = candidates.map((c) => ({ name: c.name, quad: orderQuad(c.quad) }));
+  for (const c of given) {
+    keep(refineCandidate(gray, w, h, c, log));
+    if (EXCELLENT(best)) return { ...best, shortcut: true };
+  }
   const sz = Math.max(w, h);
   const lq = latticeQuads(gray, w, h, [sz / 600, sz / 300, sz / 160]);
   const pre = [];
@@ -326,28 +353,13 @@ export function chooseBoardQuad(gray, w, h, candidates, log = null) {
     pre.push({ ...totalScore(G0, gray, w, h, q), name: c.name, quad: q });
   }
   pre.sort((a, b) => b.total - a.total);
-  const all = candidates.map((c) => ({ name: c.name, quad: orderQuad(c.quad) }));
   const seen = [];
   for (const p of pre) {
     const sq = squareSize(p.quad);
     if (seen.some((s) => Math.max(...s.map((pt, i) => Math.hypot(pt[0] - p.quad[i][0], pt[1] - p.quad[i][1]))) < sq * 0.5)) continue;
-    seen.push(p.quad); all.push({ name: p.name, quad: p.quad });
+    seen.push(p.quad);
+    keep(refineCandidate(gray, w, h, { name: p.name, quad: p.quad }, log));
     if (seen.length >= 3) break;
-  }
-  let best = null;
-  for (const c of all) {
-    const sq = squareSize(c.quad);
-    if (!(sq > 3)) continue;
-    const G = gradField(gray, w, h, Math.max(0.8, sq / 10));
-    const r1 = refineQuad(G, c.quad);
-    const G2 = gradField(gray, w, h, Math.max(0.6, squareSize(r1.quad) / 16));
-    const r2 = refineQuad(G2, r1.quad, 0.1, 0.02);
-    for (const i0 of [-1, 0, 1]) for (const j0 of [-1, 0, 1]) {
-      const qq = extrapolateQuad(r2.quad, i0, j0, i0 + 8, j0 + 8);
-      const sc = totalScore(G2, gray, w, h, qq);
-      if (log) log.push({ name: c.name, i0, j0, ...sc });
-      if (!best || sc.total > best.total) best = { ...sc, quad: qq, name: c.name };
-    }
   }
   return best;
 }
