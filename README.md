@@ -10,14 +10,15 @@
 
 👉 **Probar en vivo:** **https://mosqueteroweb.github.io/img2fen/**
 
-🆕 **v3.0.0:** nuevo motor de reconocimiento que lee fotos de pantallas y libros **giradas y en perspectiva**. Comparativa con la v2.7.0 en [`pwa/BENCHMARK.md`](pwa/BENCHMARK.md).
+🆕 **v3.1.0:** fotos **HEIC** (iPhone), reconocimiento **casi el doble de rápido** (multihilo y atajos), botones «Ver desde» y «Corregir lado», avisos de error más claros y aviso cuando la foto no contiene un tablero.
+**v3.0:** nuevo motor de reconocimiento que lee fotos de pantallas y libros **giradas y en perspectiva**. Comparativas en [`pwa/BENCHMARK.md`](pwa/BENCHMARK.md).
 
 ---
 
 ## 🚀 Características Principales
 
 ### 📸 1. Captura Rápida, Galería e Integración con "Compartir" de Android
-- **Cámara y Galería**: Toma una foto directa o selecciona cualquier captura desde el almacenamiento local.
+- **Cámara y Galería**: Toma una foto directa o selecciona cualquier captura desde el almacenamiento local. Admite JPG, PNG, WebP y **HEIC/HEIF** (el decodificador HEIC solo se descarga la primera vez que se usa).
 - **Web Share Target (Nativo en Android)**: Comparte fotos directamente desde WhatsApp, Twitter/X, el navegador o tu galería hacia Img2FEN desde el menú *"Compartir"* de tu teléfono.
 - **Localización precisa del tablero**:
   - **Retícula de esquinas en X**: detecta los cruces de casillas y ajusta una homografía, por lo que funciona con tableros **girados y en perspectiva**.
@@ -43,6 +44,7 @@
 
 ### 🎯 4. Edición Táctil y Exportación
 - Modifica o añade cualquier pieza tocando sobre la casilla.
+- **👁 Ver desde Blancas/Negras**: gira la vista sin cambiar la posición. **⚠️ Corregir lado**: si la IA puso las blancas donde van las negras, gira las piezas 180° y corrige el FEN.
 - Conmutador de turno de juego (Juegan Blancas ♔ / Juegan Negras ♚).
 - **Copiar FEN**: Un toque para copiar al portapapeles.
 - **Chess.com**: Abre la posición directamente en el tablero de análisis de Chess.com.
@@ -54,7 +56,8 @@
 
 - **Frontend**: HTML5 Semántico, CSS3 Moderno (Glassmorphism, CSS Grid, animaciones fluidas), JavaScript ES Modules.
 - **PWA**: ficheros estáticos sin compilación + service worker propio (offline completo y Web Share Target).
-- **Motor de Inferencia ML**: [Microsoft ONNX Runtime Web](https://www.npmjs.com/package/onnxruntime-web) (WASM SIMD multihilo).
+- **Motor de Inferencia ML**: [Microsoft ONNX Runtime Web](https://www.npmjs.com/package/onnxruntime-web) (WASM SIMD, hasta 4 hilos: el service worker activa el aislamiento de origen que GitHub Pages no permite configurar).
+- **HEIC/HEIF**: [`libheif-js`](https://github.com/catdad-experiments/libheif-js) (LGPL-3.0), cargado bajo demanda.
 - **Reglas y Validación**: [`chess.js`](https://github.com/jhlywa/chess.js) (BSD-2-Clause) + Validador semántico in-house.
 - **Despliegue Continuo**: GitHub Actions + GitHub Pages.
 

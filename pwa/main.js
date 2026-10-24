@@ -1,7 +1,7 @@
 import { Chess } from './js/vendor/chess.js';
 import { recognize } from './js/recognizer.js';
 
-const APP_VERSION = '3.0.2';
+const APP_VERSION = '3.1.0';
 
 /**
  * -------------------------------------------------------------
