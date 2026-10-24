@@ -195,33 +195,66 @@ function toWorkingCanvas(img, maxDim) {
   return c;
 }
 
+// ¿Es un HEIC/HEIF? (por el contenido, no por la extensión: 'ftyp' + marca HEIF)
+async function isHeif(file) {
+  try {
+    const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+    const txt = String.fromCharCode(...head);
+    if (txt.slice(4, 8) !== 'ftyp') return false;
+    return /heic|heix|hevc|hevx|heim|heis|mif1|msf1/.test(txt.slice(8, 32));
+  } catch (_) { return false; }
+}
+
+// Decodificador HEIC (libheif-js, LGPL-3.0). Solo se descarga la primera vez que llega una foto HEIC.
+let libheifPromise = null;
+async function decodeHeicToCanvas(file) {
+  if (!libheifPromise) {
+    libheifPromise = import('./js/vendor/libheif-bundle.mjs').then((m) => m.default()).catch((e) => { libheifPromise = null; throw e; });
+  }
+  const libheif = await libheifPromise;
+  const decoder = new libheif.HeifDecoder();
+  const images = decoder.decode(new Uint8Array(await file.arrayBuffer()));
+  if (!images || !images.length) throw new Error('HEIC sin imágenes');
+  const image = images[0];
+  const w = image.get_width(), h = image.get_height();
+  const full = document.createElement('canvas');
+  full.width = w; full.height = h;
+  const ctx = full.getContext('2d');
+  const imageData = ctx.createImageData(w, h);
+  await new Promise((resolve, reject) => image.display(imageData, (d) => (d ? resolve() : reject(new Error('Error al decodificar HEIC')))));
+  ctx.putImageData(imageData, 0, 0);
+  images.forEach((im) => im.free?.());
+  return toWorkingCanvas(full, 2048);
+}
+
 // Decodifica la foto y devuelve una copia reducida (máx. 2048 px) en un canvas.
-// 1º <img> (respeta la orientación EXIF en todos los navegadores); si falla, createImageBitmap.
-function decodeImageFile(file) {
+// 1º <img> (respeta la orientación EXIF; Safari lee HEIC de forma nativa), 2º libheif si es HEIC, 3º createImageBitmap.
+function decodeWithImg(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.decoding = 'async';
     img.onload = () => {
       img.onload = img.onerror = null;
-      try {
-        const c = toWorkingCanvas(img, 2048);
-        URL.revokeObjectURL(url);
-        resolve(c);
-      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+      try { resolve(toWorkingCanvas(img, 2048)); } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
     };
-    img.onerror = async () => {
-      img.onload = img.onerror = null;
-      URL.revokeObjectURL(url);
-      try {
-        const bmp = await createImageBitmap(file);
-        const c = toWorkingCanvas(bmp, 2048);
-        bmp.close?.();
-        resolve(c);
-      } catch (e) { reject(e); }
-    };
+    img.onerror = () => { img.onload = img.onerror = null; URL.revokeObjectURL(url); reject(new Error('img')); };
     img.src = url;
   });
+}
+
+async function decodeImageFile(file) {
+  try {
+    return await decodeWithImg(file);
+  } catch (_) { /* sigue con los respaldos */ }
+  if (await isHeif(file)) {
+    showLoading('Convirtiendo foto HEIC...');
+    return decodeHeicToCanvas(file);
+  }
+  const bmp = await createImageBitmap(file);
+  const c = toWorkingCanvas(bmp, 2048);
+  bmp.close?.();
+  return c;
 }
 
 async function handleFile(file) {
@@ -236,7 +269,7 @@ async function handleFile(file) {
     hideLoading();
     console.error('Error al decodificar la imagen:', err, file && file.type);
     const kind = (file && (file.type || file.name.split('.').pop())) || 'desconocido';
-    showError('No se pudo leer la imagen', `El formato del archivo (${kind}) no es compatible o el archivo está dañado. Prueba con una captura de pantalla o guarda la foto como JPG o PNG.`);
+    showError('No se pudo leer la imagen', `El formato del archivo (${kind}) no es compatible o el archivo está dañado. Prueba con una captura de pantalla o guarda la foto como JPG, PNG o HEIC.`);
     return;
   }
   try {
@@ -1443,7 +1476,7 @@ if (dropZone) {
 
   dropZone.addEventListener('drop', (e) => {
     const files = e.dataTransfer?.files;
-    if (files && files[0] && files[0].type.startsWith('image/')) {
+    if (files && files[0] && isImageFile(files[0])) {
       handleFile(files[0]);
     }
   });
@@ -1454,7 +1487,7 @@ window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => {
   e.preventDefault();
   const files = e.dataTransfer?.files;
-  if (files && files[0] && files[0].type.startsWith('image/')) {
+  if (files && files[0] && isImageFile(files[0])) {
     handleFile(files[0]);
   }
 });
@@ -1487,6 +1520,8 @@ window.addEventListener('resize', () => {
  * TOAST NOTIFICATIONS
  * -------------------------------------------------------------
  */
+const isImageFile = (f) => !!f && ((f.type || '').startsWith('image/') || /\.(heic|heif)$/i.test(f.name || ''));
+
 let errorTimer = null;
 function closeError() {
   clearTimeout(errorTimer);

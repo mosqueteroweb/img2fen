@@ -117,3 +117,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - **Autor / Creador**: yamero999 ([Hugging Face Space](https://huggingface.co/spaces/yamero999/chess-fen-generation-api) / [Model Hub](https://huggingface.co/yamero999/ultimate-v2-chess-onnx)).
 - **Licencia**: Apache License 2.0 (compatible con GNU GPLv3 según las directrices de la Free Software Foundation).
 - **Descripción**: Red neuronal convolucional entrenada para segmentar y encuadrar automáticamente tableros de ajedrez en fotografías y capturas de pantalla, ejecutada localmente en el dispositivo mediante ONNX Runtime WebAssembly.
+
+---
+
+## 6. Decodificador HEIC/HEIF (`libheif-js`)
+
+- **Componente**: `pwa/js/vendor/libheif-bundle.mjs` (libheif compilado a WebAssembly), versión 1.23.2. Se carga solo cuando el usuario abre una foto HEIC/HEIF que el navegador no sabe leer.
+- **Proyecto de origen**: [`catdad-experiments/libheif-js`](https://github.com/catdad-experiments/libheif-js), basado en [`strukturag/libheif`](https://github.com/strukturag/libheif).
+- **Licencia**: GNU Lesser General Public License v3.0 (LGPL-3.0), compatible con la GPLv3 de este proyecto. Texto completo en [`pwa/js/vendor/libheif-LICENSE.txt`](pwa/js/vendor/libheif-LICENSE.txt). El código fuente de la biblioteca está disponible en los repositorios enlazados; el fichero se distribuye sin modificar y puede sustituirse por otra versión compatible.
