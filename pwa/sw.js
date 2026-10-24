@@ -1,10 +1,10 @@
 // Service Worker de Img2FEN: funciona 100% offline y recibe imágenes compartidas (Web Share Target).
-const VERSION = '3.1.0';
+const VERSION = '3.1.1';
 const CACHE = `img2fen-v${VERSION}`;
 const SHARED = 'img2fen-shared-data';
 const ASSETS = [
   './', './index.html', './style.css', './main.js', './manifest.webmanifest',
-  './js/recognizer.js', './js/detector.js', './js/geometry.js', './js/imageops.js',
+  './js/recognizer.js', './js/worker.js', './js/detector.js', './js/geometry.js', './js/imageops.js',
   './js/vendor/ort.wasm.min.mjs', './js/vendor/chess.js',
   './wasm/ort-wasm-simd-threaded.mjs', './wasm/ort-wasm-simd-threaded.wasm',
   './model/chess-tiles-v2.onnx', './model/chess-yolo26n.onnx', './model/board-segmentation.onnx',

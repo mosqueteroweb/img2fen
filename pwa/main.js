@@ -1,7 +1,53 @@
 import { Chess } from './js/vendor/chess.js';
-import { recognize } from './js/recognizer.js';
+// El reconocimiento se hace en un Web Worker (js/worker.js) para que la interfaz no se congele.
+// Si el navegador no lo admite (p. ej. Safari antiguo sin OffscreenCanvas en workers), se usa el hilo principal.
+let workerPromise = null;
+let workerBroken = false;
+let msgId = 0;
+const pending = new Map();
+function getWorker() {
+  if (workerBroken || typeof Worker === 'undefined' || typeof createImageBitmap === 'undefined') return null;
+  if (!workerPromise) {
+    workerPromise = new Promise((resolve) => {
+      try {
+        const w = new Worker(new URL('./js/worker.js', import.meta.url), { type: 'module' });
+        const timer = setTimeout(() => { workerBroken = true; resolve(null); }, 8000);
+        w.onmessage = (e) => {
+          const m = e.data;
+          if (m.ready) { clearTimeout(timer); resolve(w); return; }
+          const p = pending.get(m.id);
+          if (!p) return;
+          if (m.progress) { p.onProgress?.(m.progress); return; }
+          pending.delete(m.id);
+          if (m.error) p.reject(new Error(m.error)); else p.resolve(m.result);
+        };
+        w.onerror = () => { clearTimeout(timer); workerBroken = true; resolve(null); };
+      } catch (_) { workerBroken = true; resolve(null); }
+    });
+  }
+  return workerPromise;
+}
+async function recognize(source, options = {}) {
+  const w = await getWorker();
+  if (w) {
+    try {
+      const bitmap = await createImageBitmap(source);
+      const { onProgress, ...opts } = options;
+      return await new Promise((resolve, reject) => {
+        const id = ++msgId;
+        pending.set(id, { resolve, reject, onProgress });
+        w.postMessage({ id, bitmap, options: opts }, [bitmap]);
+      });
+    } catch (err) {
+      if (!/NO_OFFSCREEN/.test(String(err && err.message))) console.warn('Worker falló; uso el hilo principal', err);
+      workerBroken = true;
+    }
+  }
+  const mod = await import('./js/recognizer.js');
+  return mod.recognize(source, options);
+}
 
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.1.1';
 
 /**
  * -------------------------------------------------------------
@@ -843,7 +889,9 @@ function openCropScreen() {
   });
 }
 
+let lastEngineInfo = '';
 function applyRecognition(r) {
+  if (r.threads) lastEngineInfo = `${r.threads} ${r.threads === 1 ? 'hilo' : 'hilos'}`;
   currentSquares = r.squares.slice();
   isBoardViewFlipped = r.flipped;
   activeColor = r.turn;
@@ -1623,7 +1671,7 @@ async function handleCheckForUpdates() {
       showToast('⚡ ¡Nueva versión encontrada! Actualizando...', 2500);
       setTimeout(() => window.location.reload(), 1200);
     } else {
-      showToast(`✅ Ya tienes la última versión (v${APP_VERSION})`, 2500);
+      showToast(`✅ Ya tienes la última versión (v${APP_VERSION}${lastEngineInfo ? ' · ' + lastEngineInfo : (window.crossOriginIsolated ? ' · multihilo' : ' · 1 hilo')})`, 3000);
     }
   } catch (err) {
     console.warn('[PWA] Error comprobando actualización:', err);

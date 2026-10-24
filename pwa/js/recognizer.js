@@ -458,7 +458,7 @@ export async function recognize(source, options = {}) {
   const displayQuad = rollQuad(q, k).map(([x, y]) => [x / src.scale, y / src.scale]);
   return {
     squares, flipped, turn, conf: flipped ? [...conf].reverse() : conf,
-    quad: displayQuad, how, mono, ms: Math.round(performance.now() - t0), orient, quality,
+    quad: displayQuad, how, mono, ms: Math.round(performance.now() - t0), orient, quality, threads: THREADS, isolated: !!globalThis.crossOriginIsolated,
     debugRect: options.debug ? yoloBoard.extra.rect : undefined, timings: T,
   };
 }
