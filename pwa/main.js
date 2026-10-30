@@ -47,7 +47,7 @@ async function recognize(source, options = {}) {
   return mod.recognize(source, options);
 }
 
-const APP_VERSION = '3.1.2';
+const APP_VERSION = '3.1.3';
 
 /**
  * -------------------------------------------------------------
@@ -1589,6 +1589,24 @@ function closeUrlModal() {
   urlModal.classList.add('hidden');
 }
 
+// Enlace a un tuit de X/Twitter (x.com/usuario/status/ID/photo/N): lleva a una página, no a la imagen
+function parseTweetUrl(url) {
+  if (!/^(www\.|mobile\.)?(x|twitter|fxtwitter|fixupx|vxtwitter)\.com$/i.test(url.hostname)) return null;
+  const m = url.pathname.match(/\/status(?:es)?\/(\d+)(?:\/photo\/(\d+))?/);
+  return m ? { id: m[1], photo: Number(m[2] || 1) } : null;
+}
+
+// X no deja leer sus tuits desde otras webs; api.fxtwitter.com devuelve la dirección de las fotos (pbs.twimg.com)
+async function resolveTweetPhoto(url) {
+  const { id, photo } = parseTweetUrl(url);
+  const res = await fetch(`https://api.fxtwitter.com/status/${id}`, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+  if (!res.ok) throw new Error(`fxtwitter HTTP ${res.status}`);
+  const photos = (await res.json())?.tweet?.media?.photos || [];
+  const chosen = photos[photo - 1] || photos[0];
+  if (!chosen?.url) throw new Error('El tuit no tiene fotos');
+  return chosen.url;
+}
+
 // La imagen se lee directamente de su servidor; solo funciona si este permite el acceso desde otras webs (CORS)
 async function handleImageUrl(text) {
   const url = parseImageUrl(text);
@@ -1599,7 +1617,8 @@ async function handleImageUrl(text) {
   showLoading('Descargando imagen...');
   let blob;
   try {
-    const res = await fetch(url.href, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
+    const imageUrl = parseTweetUrl(url) ? await resolveTweetPhoto(url) : url.href;
+    const res = await fetch(imageUrl, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     blob = await res.blob();
   } catch (err) {
@@ -1620,7 +1639,7 @@ async function handleImageUrl(text) {
     showError('No es una imagen', 'La URL lleva a una página web, no a una imagen. Abre la página, mantén pulsada la imagen y elige «Copiar dirección de imagen».', 7000);
     return;
   }
-  const name = decodeURIComponent(url.pathname.split('/').pop() || '') || 'imagen-url';
+  const name = parseTweetUrl(url) ? `tuit-${parseTweetUrl(url).id}.jpg` : decodeURIComponent(url.pathname.split('/').pop() || '') || 'imagen-url';
   handleFile(new File([blob], name, { type: blob.type }));
 }
 
