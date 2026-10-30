@@ -47,7 +47,7 @@ async function recognize(source, options = {}) {
   return mod.recognize(source, options);
 }
 
-const APP_VERSION = '3.1.1';
+const APP_VERSION = '3.1.2';
 
 /**
  * -------------------------------------------------------------
@@ -1476,7 +1476,7 @@ document.addEventListener('visibilitychange', () => {
   if (busy) {
     setTimeout(() => showError('La app se cerró mientras analizaba', 'El navegador la cerró por falta de memoria. Prueba de nuevo o cierra otras apps.'), 600);
   } else if (picking) {
-    setTimeout(() => showError('La app se recargó', 'El navegador la recargó mientras elegías la foto. Vuelve a intentarlo con «Abrir Imagen».'), 600);
+    setTimeout(() => showError('La app se recargó', 'El navegador la recargó mientras elegías la foto. Vuelve a intentarlo.'), 600);
   }
 })();
 
@@ -1502,8 +1502,11 @@ inputGallery.addEventListener('change', (e) => {
 const dropZone = document.getElementById('drop-zone');
 
 if (dropZone) {
-  dropZone.addEventListener('click', () => {
-    inputGallery.click();
+  dropZone.addEventListener('click', (e) => {
+    if (e.target !== inputGallery) inputGallery.click();
+  });
+  dropZone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputGallery.click(); }
   });
 
   ['dragenter', 'dragover'].forEach((eventName) => {
@@ -1540,8 +1543,9 @@ window.addEventListener('drop', (e) => {
   }
 });
 
-// Paste from Clipboard (Ctrl+V / Cmd+V on desktop or mobile)
+// Paste from Clipboard (Ctrl+V / Cmd+V on desktop or mobile): una imagen o el enlace de una imagen
 window.addEventListener('paste', (e) => {
+  if (e.target instanceof HTMLInputElement) return;
   const items = e.clipboardData?.items;
   if (items) {
     for (const item of items) {
@@ -1549,11 +1553,87 @@ window.addEventListener('paste', (e) => {
         const file = item.getAsFile();
         if (file) {
           handleFile(file);
-          break;
+          return;
         }
       }
     }
   }
+  const text = (e.clipboardData?.getData('text') || '').trim();
+  if (screens.home.classList.contains('active') && parseImageUrl(text)) handleImageUrl(text);
+});
+
+/**
+ * -------------------------------------------------------------
+ * IMAGEN DESDE URL
+ * -------------------------------------------------------------
+ */
+const urlModal = document.getElementById('url-modal');
+const urlInput = document.getElementById('url-input');
+
+function parseImageUrl(text) {
+  try {
+    const url = new URL(text);
+    return /^https?:$/.test(url.protocol) ? url : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function openUrlModal() {
+  urlInput.value = '';
+  urlModal.classList.remove('hidden');
+  urlInput.focus();
+}
+
+function closeUrlModal() {
+  urlModal.classList.add('hidden');
+}
+
+// La imagen se lee directamente de su servidor; solo funciona si este permite el acceso desde otras webs (CORS)
+async function handleImageUrl(text) {
+  const url = parseImageUrl(text);
+  if (!url) {
+    showError('URL no válida', 'Pega una dirección completa que empiece por http:// o https://.');
+    return;
+  }
+  showLoading('Descargando imagen...');
+  let blob;
+  try {
+    const res = await fetch(url.href, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    blob = await res.blob();
+  } catch (err) {
+    hideLoading();
+    console.error('Error descargando la imagen:', err);
+    const offline = !navigator.onLine;
+    showError(
+      offline ? 'Sin conexión' : 'No se pudo abrir la URL',
+      offline
+        ? 'Para cargar una imagen desde una URL hace falta internet.'
+        : 'Esa web no permite leer la imagen desde otras páginas o la dirección no existe. Abre la imagen en el navegador, cópiala (mantén pulsado o clic derecho → Copiar imagen) y pégala aquí.',
+      offline ? 3000 : 7000,
+    );
+    return;
+  }
+  if (blob.type && !blob.type.startsWith('image/') && blob.type !== 'application/octet-stream') {
+    hideLoading();
+    showError('No es una imagen', 'La URL lleva a una página web, no a una imagen. Abre la página, mantén pulsada la imagen y elige «Copiar dirección de imagen».', 7000);
+    return;
+  }
+  const name = decodeURIComponent(url.pathname.split('/').pop() || '') || 'imagen-url';
+  handleFile(new File([blob], name, { type: blob.type }));
+}
+
+document.getElementById('btn-open-url').addEventListener('click', openUrlModal);
+document.getElementById('btn-url-cancel').addEventListener('click', closeUrlModal);
+urlModal.addEventListener('click', (e) => { if (e.target === urlModal) closeUrlModal(); });
+urlModal.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeUrlModal(); });
+document.getElementById('url-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = urlInput.value.trim();
+  if (!text) { urlInput.focus(); return; }
+  closeUrlModal();
+  handleImageUrl(text);
 });
 
 // Window resize handler to adapt canvas dynamically

@@ -6,7 +6,7 @@
   <title>Img2FEN ♟️ - Diagramas a FEN de Ajedrez</title>
   <meta name="description" content="Convierte diagramas y fotos de ajedrez a notación FEN al instante. 100% offline, local y privado.">
   <meta name="theme-color" content="#121212">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https:;">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -21,7 +21,7 @@
         <img src="icons/icon-512.png" alt="Img2FEN" class="app-logo">
         <div class="app-title-group">
           <h1 class="app-title">Img2FEN</h1>
-          <span class="app-version" id="app-version-badge" title="Toca para buscar actualizaciones">v3.1.1</span>
+          <span class="app-version" id="app-version-badge" title="Toca para buscar actualizaciones">v3.1.2</span>
           <button id="btn-check-update" class="update-btn" title="Comprobar si hay una nueva versión">
             <span class="update-icon">🔄</span>
             <span class="update-text">Actualizar</span>
@@ -51,18 +51,18 @@
             <input type="file" id="input-camera" accept="image/*" capture="environment" class="hidden-input">
           </label>
 
-          <label class="action-btn secondary-btn">
-            <span class="icon">🖼️</span>
-            <span class="text">Abrir Imagen</span>
-            <input type="file" id="input-gallery" accept="image/*,.heic,.heif" class="hidden-input">
-          </label>
+          <button type="button" id="btn-open-url" class="action-btn secondary-btn">
+            <span class="icon">🔗</span>
+            <span class="text">Pegar URL</span>
+          </button>
         </div>
 
-        <!-- Drag & Drop Zone for Desktop -->
-        <div id="drop-zone" class="drop-zone">
-          <span class="drop-icon">📁</span>
-          <span class="drop-text">O arrastra una imagen o captura aquí</span>
-          <span class="drop-subtext">Soporta PNG, JPG, WebP o pegar desde el portapapeles (Ctrl+V / Cmd+V)</span>
+        <!-- Abrir, arrastrar o pegar una imagen -->
+        <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Abrir imagen">
+          <span class="drop-icon">🖼️</span>
+          <span class="drop-text">Abre, arrastra o pega una imagen</span>
+          <span class="drop-subtext">Toca para elegir de la galería o archivos · PNG, JPG, WebP, HEIC · Ctrl+V / Cmd+V</span>
+          <input type="file" id="input-gallery" accept="image/*,.heic,.heif" class="hidden-input">
         </div>
 
         <!-- History Card -->
@@ -240,6 +240,19 @@
           <button id="btn-cancel-modal" class="modal-btn cancel-btn">Cancelar</button>
         </div>
       </div>
+    </div>
+
+    <!-- Cargar imagen desde una URL -->
+    <div id="url-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="url-title">
+      <form id="url-form" class="modal-card url-card" novalidate>
+        <h3 id="url-title">Imagen desde URL</h3>
+        <p>Pega la dirección de la imagen. Se descarga directamente, sin guardarla en el dispositivo.</p>
+        <input type="url" id="url-input" class="url-input" placeholder="https://…/diagrama.png" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" required>
+        <div class="modal-actions">
+          <button type="submit" class="modal-btn url-load-btn">Cargar</button>
+          <button type="button" id="btn-url-cancel" class="modal-btn cancel-btn">Cancelar</button>
+        </div>
+      </form>
     </div>
 
     <!-- Error Dialog (se cierra solo a los 3 s) -->

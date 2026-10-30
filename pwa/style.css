@@ -964,6 +964,27 @@ body {
   color: #fff;
 }
 
+.url-input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-variant);
+  color: var(--text-main);
+  font-size: 1rem;
+}
+
+.url-input:focus {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 1px;
+}
+
+.url-load-btn {
+  background-color: var(--primary-color);
+  color: #fff;
+}
+
 /* Loading Overlay */
 .loading-overlay {
   position: fixed;
