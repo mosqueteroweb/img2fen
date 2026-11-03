@@ -354,12 +354,11 @@ body {
   margin-bottom: 12px;
 }
 
+/* Inset so a corner at the image edge stays whole inside the frame and,
+   on narrow phones, away from the screen edge where Android's back gesture starts. */
 .crop-viewport {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 24px;
   touch-action: none;
 }
 
