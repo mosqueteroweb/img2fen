@@ -99,11 +99,14 @@ body {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   padding: 4px 8px;
+  min-width: 44px;
+  min-height: 44px;
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
 }
@@ -1053,27 +1056,13 @@ body {
 /* Responsive Desktop Optimizations */
 /* Responsive Desktop & Tablet Optimizations */
 @media (min-width: 768px) {
-  body {
-    background-color: #0d0d0d;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding: 24px 16px;
-  }
-
   .app-container {
     width: 100%;
     max-width: 960px;
-    min-height: auto;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75);
-    overflow: hidden;
+    margin: 0 auto;
   }
 
   .app-header {
-    border-top-left-radius: var(--radius-lg);
-    border-top-right-radius: var(--radius-lg);
     padding: 16px 24px;
   }
 
@@ -1127,9 +1116,37 @@ body {
     margin-bottom: 0;
   }
 
-  .zoom-controls,
-  .quick-fit-controls {
+  .zoom-controls {
     justify-content: space-between;
+  }
+
+  /* Label above, buttons in a grid that sizes to their text: five fixed 40px buttons
+     did not fit the side column at 832px and «Esquinas» spilled out of its button. */
+  .quick-fit-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 8px;
+  }
+
+  .quick-fit-controls .label {
+    grid-column: 1 / -1;
+  }
+
+  .engine-selector-card {
+    flex-wrap: wrap;
+  }
+
+  .engine-selector-card .label {
+    flex-basis: 100%;
+  }
+
+  .engine-pills {
+    flex: 1 1 100%;
+  }
+
+  .engine-pill {
+    flex: 1;
+    min-height: 44px;
   }
 
   .turn-selector-card {
@@ -1164,8 +1181,8 @@ body {
   }
 
   .ctrl-btn {
-    width: 40px;
-    height: 40px;
+    min-width: 44px;
+    height: 44px;
   }
 
   .modal-card {
@@ -1175,6 +1192,31 @@ body {
 
   .piece-btn {
     border-radius: var(--radius-md);
+  }
+}
+
+/* Floating window frame only with a mouse: on a tablet or the inner screen of a foldable
+   (832px) the frame and its margins took space from the board. */
+@media (min-width: 768px) and (pointer: fine) {
+  body {
+    background-color: #0d0d0d;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 24px 16px;
+  }
+
+  .app-container {
+    min-height: auto;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75);
+    overflow: hidden;
+  }
+
+  .app-header {
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
   }
 }
 
@@ -1263,3 +1305,8 @@ body {
 }
 .error-timer { height: 4px; margin-top: 12px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
 #error-timer-bar { height: 100%; width: 100%; background: #e5484d; }
+
+/* v3.1.5: the paste shortcut only makes sense with a keyboard. */
+@media (pointer: coarse) {
+  .kbd-hint { display: none; }
+}
